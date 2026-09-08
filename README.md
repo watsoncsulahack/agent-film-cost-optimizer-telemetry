@@ -1,49 +1,58 @@
-# Cost Optimization Telemetry Agent
+# 🎬 Cost Optimization Telemetry Agent
+### Autonomous Video Generation Empirical Telemetry Daemon & Google AP2 Payment Gateway
 
-[![Agentic Cinema Hackathon](https://img.shields.io/badge/Agentic%20Cinema-ClickHouse%20MCP%20Track-blue)](https://agentic-cinema.devpost.com/rules)
-[![Google ADK](https://img.shields.io/badge/Framework-Google%20ADK%20%2F%20GenAI-brightgreen)](https://github.com/google/agent-development-kit)
-[![ClickHouse MCP](https://img.shields.io/badge/Database-ClickHouse%20MCP%20stdio-orange)](https://github.com/ClickHouse/mcp-clickhouse)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-
-An autonomous monitoring daemon and telemetry agent for the **Agentic Cinema** video production pipeline. Built with **Google ADK (Agent Development Kit)**, **Google Gemini**, and the official **ClickHouse Model Context Protocol (`mcp-clickhouse`)** server.
+[![Google Cloud Run](https://img.shields.io/badge/Google_Cloud_Run-Live_App-4285F4?style=for-the-badge&logo=googlecloud&logoColor=white)](https://agent-film-cost-optimizer-709949980336.us-central1.run.app)
+[![Agentic Cinema](https://img.shields.io/badge/Hackathon-Agentic_Cinema_ClickHouse_MCP-FF6B6B?style=for-the-badge)](https://agentic-cinema.devpost.com/rules)
+[![Google ADK](https://img.shields.io/badge/Google_ADK-1.18+-34A853?style=for-the-badge&logo=google&logoColor=white)](https://github.com/google/agent-development-kit)
+[![ClickHouse MCP](https://img.shields.io/badge/ClickHouse_MCP-Official_Server-F97316?style=for-the-badge&logo=clickhouse&logoColor=white)](https://github.com/ClickHouse/mcp-clickhouse)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=for-the-badge)](LICENSE)
 
 ---
 
-## 🌟 Overview & Closed-Loop Architecture
+> 🚀 **Live Hosted Application**: **[https://agent-film-cost-optimizer-709949980336.us-central1.run.app](https://agent-film-cost-optimizer-709949980336.us-central1.run.app)**  
+> 🔗 **Sibling Repository (Parallel Track)**: **[agent-film-cost-optimizer](https://github.com/watsoncsulahack/agent-film-cost-optimizer)**  
+> 🏆 **Built for**: *Agentic Cinema: The Blockbuster Hackathon* (ClickHouse MCP Track)
 
-In AI video generation workflows, preliminary cost quotes from upstream models often diverge from real-world expenditure due to prompt iterations, physics failures, motion artifacts, and user regeneration loops.
+---
 
-The **Cost Optimization Telemetry Agent** closes this loop:
-1. **Captures Ground-Truth Metrics**: Intercepts video generation sessions, tracking baseline quotes, user rejections/reruns, and cumulative realized costs.
-2. **Monitors Acceptance & Timeouts**: Detects positive acceptance (downloads/approvals) vs negative terminal events (abandonment or 15-minute idle timeouts).
-3. **Persists to ClickHouse via MCP**: Employs non-blocking stdio/JSON-RPC communication with the official ClickHouse MCP server (`mcp-clickhouse`) to append records to `generation_telemetry`.
-4. **Feeds Empirical Intelligence Back**: Computes effective cost multipliers and empirical model acceptance rates, empowering the upstream **Cost Optimization Agent** (`ai-film`) to make increasingly accurate, data-driven model recommendations over time.
+## 💡 Overview & Closed-Loop Architecture
+
+In generative AI video production, catalog pricing quotes frequently diverge from actual realized costs due to iterative prompt adjustments, motion artifact rejections, and regeneration loops (averaging 2.2x to 4.0x per final shot).
+
+The **Cost Optimization Telemetry Agent** provides autonomous empirical telemetry and payment governance:
+1. **Tracks Empirical Ground-Truth**: Captures actual per-shot realized costs, rerun iteration counts, and director acceptance outcomes.
+2. **Autonomous Agent Payments (Google AP2 Protocol)**: Enforces cryptographic intent mandates, budget caps, and micro-metered debits per video generation and rerun.
+3. **Persists to ClickHouse via MCP**: Dispatches structured, non-blocking telemetry records directly to ClickHouse via the official `mcp-clickhouse` server.
+4. **Feeds Historical Intelligence Back**: Aggregates empirical multipliers and acceptance rates, enabling the upstream **Cost Optimization Agent** to produce increasingly accurate recommendations over time.
 
 ```mermaid
 flowchart TD
-    UR[Filmmaker Prompt] --> COA[Cost Optimization Agent\nai-film]
-    COA --> EST[Select Model & Baseline Quote]
-    EST --> GEN[Execute Video Generation]
-    GEN --> DEC{User Accepts Render?}
+    Director[🎬 Director / Filmmaker] -->|Shot Prompt| COA[Cost Optimization Agent\nai-film / Parallel Track]
+    COA -->|Recommended Model & Quote| UI[Review & Generation Studio]
     
-    DEC -- No (Retry / Rerun) --> RERUN[Increment Reruns + Add Incremental Cost]
-    RERUN --> TEL[Cost Optimization Telemetry Agent\nai-films-telemetry]
-    RERUN -.-> GEN
+    UI -->|Google AP2 Intent Mandate| WALLET[Director Agent Wallet\nPre-Fund & Micro-Debit]
+    WALLET -->|10s Cinematic Render Flow| PREVIEW[Interactive Mini Video Player]
     
-    DEC -- Yes (Download / Accept) --> ACC[Final Outcome: user_accepted = 1]
+    PREVIEW --> DEC{Director Decision}
+    DEC -->|🔄 Regenerate (+ Cost)| RERUN[Debit Incremental Cost & Log Rerun]
+    RERUN --> TEL[Cost Optimization Telemetry Agent\nai-films-telemetry / ClickHouse Track]
+    RERUN -.-> PREVIEW
+    
+    DEC -->|✅ Accept & Download| ACC[user_accepted = 1]
     ACC --> TEL
     
-    TIMEOUT[Idle Timeout / Abandon: user_accepted = 0] --> TEL
+    DEC -->|❌ Discard / Idle Timeout| DIS[user_accepted = 0]
+    DIS --> TEL
     
-    TEL -->|mcp-clickhouse stdio/JSON-RPC| CH[(ClickHouse Metrics DB\ngeneration_telemetry)]
-    CH -.->|Closed-Loop Historical Empirical Stats| COA
+    TEL -->|mcp-clickhouse stdio JSON-RPC| CH[(ClickHouse Database\ngeneration_telemetry)]
+    CH -.->|Empirical Rerun Multipliers & Ground-Truth| COA
 ```
 
 ---
 
-## 📊 ClickHouse Telemetry Schema
+## 🏛️ ClickHouse DDL Schema (`generation_telemetry`)
 
-The agent ensures the target ClickHouse table exists via DDL on startup:
+The agent automatically verifies and initializes the target table via `mcp-clickhouse`:
 
 ```sql
 CREATE TABLE IF NOT EXISTS generation_telemetry (
@@ -59,127 +68,52 @@ CREATE TABLE IF NOT EXISTS generation_telemetry (
 ORDER BY (suggested_model, created_at);
 ```
 
-### Field Specifications
-| Attribute | Type | Nullable | Source | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `session_id` | `UUID` | No | System Orchestrator | Unique identifier for generation session. |
-| `prompt_text` | `String` | No | Ingestion Agent | Raw text prompt used for the generation run. |
-| `suggested_model` | `LowCardinality(String)` | No | User Selection | Video model executed (e.g., Runway Gen-3, Luma Ray 2, Sora, Kling). |
-| `base_api_cost` | `Float32` | No | Pricing Script | Estimated baseline cost for a single generation run. |
-| `total_rerun_count` | `Int32` | No | Telemetry Agent | Total number of regeneration retries attempted. |
-| `total_session_cost` | `Float32` | No | Telemetry Agent | Cumulative API cost incurred across all retries. |
-| `user_accepted` | `UInt8` | No | User Feedback | Binary flag: `1` if video accepted, `0` if rejected/abandoned. |
-| `created_at` | `DateTime` | No | System Clock | UTC timestamp at moment of record commit. |
+---
+
+## 🚀 Key Features
+
+* **Google AP2 Mandate Engine**: Transparent director spending mandates, wallet pre-funding, and micro-payment ledger.
+* **10-Second Cinematic Rendering HUD**: Real-time progress tracker and phase ticker transitioning into an embedded HTML5 mini video player.
+* **Non-Destructive Session Resume**: Floating resume badge at the bottom-right corner to continue reviewing active generation sessions at any time.
+* **Fault-Tolerant MCP Architecture**: Resilient local JSONL fallback with seamless automatic recovery.
+* **Standalone CLI Inspector**: Inspect empirical statistics from the terminal via `python inspect_telemetry.py`.
 
 ---
 
-## 🚀 Quick Start
+## 🛠️ Quickstart & Local Setup
 
-### 1. Installation
-
+### 1. Clone & Install
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/ai-films-telemetry.git
-cd ai-films-telemetry
-
-# Install in editable mode
-pip install -e .
+git clone https://github.com/watsoncsulahack/agent-film-cost-optimizer-telemetry.git
+cd agent-film-cost-optimizer-telemetry
+pip install -r requirements.txt
 ```
 
-### 2. Environment Setup
-
-Copy `.env.example` to `.env` and configure your credentials:
-
+### 2. Configure Environment
+Copy `.env.example` to `.env` and set your API keys:
 ```bash
 cp .env.example .env
 ```
 
-```env
-# Google Gemini API Key
-GEMINI_API_KEY=your_gemini_api_key
+### 3. Launch the Studio
+```bash
+./run.sh
+```
+Open [http://localhost:8000](http://localhost:8000) in your browser.
 
-# ClickHouse Configuration
-CLICKHOUSE_HOST=localhost
-CLICKHOUSE_PORT=8443
-CLICKHOUSE_USER=default
-CLICKHOUSE_PASSWORD=
-CLICKHOUSE_DATABASE=default
-
-# Official ClickHouse MCP Server Command
-MCP_CLICKHOUSE_COMMAND=uvx mcp-clickhouse
-IDLE_TIMEOUT_SECONDS=900
+### 4. Run the Test Suite
+```bash
+PYTHONPATH=. pytest -v tests/
 ```
 
-### 3. Run the Automated Showcase Demo
-
+### 5. Inspect ClickHouse Ground-Truth Data
 ```bash
-python main.py --demo
-```
-
-### 4. Run the Google ADK Interactive Agent
-
-```bash
-python main.py --query "Show me the empirical performance breakdown and effective cost multipliers for all video generation models"
+python inspect_telemetry.py
+# Or with raw JSON records
+python inspect_telemetry.py --raw
 ```
 
 ---
 
-## 🌐 Unified Web App & Upstream Integration
-
-Both `ai-film` (Cost Optimization Agent) and `ai-films-telemetry` (Telemetry Agent) are unified within the Google Cloud hosted web application.
-
-### Python SDK Integration
-
-```python
-from telemetry_agent import TelemetryClient
-
-client = TelemetryClient()
-
-# 1. Initialize session when user submits prompt
-session_id = client.start_session(
-    prompt_text="Drone shot over futuristic metropolis at sunset",
-    suggested_model="Runway Gen-3 Alpha",
-    base_api_cost=0.0500,
-)
-
-# 2. Record rerun when user requests regeneration
-client.record_rerun(
-    session_id=session_id,
-    incremental_cost=0.0500,
-    reason="Adjust camera angle",
-)
-
-# 3. Finalize upon acceptance (writes to ClickHouse via MCP)
-client.complete_session(session_id=session_id, accepted=True)
-
-# 4. Query empirical stats to improve cost optimization recommendations
-model_insights = client.get_model_insights("Runway Gen-3 Alpha")
-```
-
-### FastAPI Bridge
-
-Mount the telemetry router into any existing FastAPI web application:
-
-```python
-from fastapi import FastAPI
-from telemetry_agent import telemetry_router
-
-app = FastAPI()
-app.include_router(telemetry_router)
-```
-
----
-
-## 🧪 Testing
-
-Run the full test suite covering session lifecycles, precision enforcement, idle timeout watchdogs, and MCP fault tolerance:
-
-```bash
-pytest tests/ -v
-```
-
----
-
-## 📜 License
-
-Licensed under the [Apache License, Version 2.0](LICENSE).
+## 📄 License
+Licensed under the [Apache License 2.0](LICENSE).

@@ -74,10 +74,15 @@ ORDER BY (suggested_model, created_at);
 
 ---
 
+> ⚠️ **Demonstration & Simulation Notice**: This project models autonomous AI agent compute micro-payments (Google AP2 mandate compliance) and empirical defect telemetry for the *Agentic Cinema Blockbuster Hackathon*. All wallet balances ($10.0000), agent debits, and compute fund top-ups are **100% simulated in software**. No actual fiat money, credit cards, or live financial transactions take place.
+
+---
+
 ## 🚀 Key Features
 
+* **Browser-Based ClickHouse MCP Database Explorer (`/database`)**: Dedicated interactive web console to query live ClickHouse ground-truth tables, filter by defect taxonomy, inspect qualitative notes, view empirical multiplier matrices, and export JSON/CSV.
 * **Director Feedback & Defect Diagnostics Survey**: Captures structured defect taxonomy (motion artifacts, physics glitches, lighting consistency, prompt deviations) and qualitative notes on every regenerate and discard action.
-* **Google AP2 Mandate Engine**: Transparent director spending mandates, wallet pre-funding, and micro-payment ledger.
+* **Google AP2 Mandate Engine**: Transparent director spending mandates, wallet pre-funding, and micro-payment ledger adhering to agentic payment protocols.
 * **10-Second Cinematic Rendering HUD**: Real-time progress tracker and phase ticker transitioning into an embedded HTML5 mini video player.
 * **Non-Destructive Session Resume**: Floating resume badge at the bottom-right corner to continue reviewing active generation sessions at any time.
 * **Fault-Tolerant MCP Architecture**: Resilient local JSONL fallback with seamless automatic recovery.
@@ -100,18 +105,19 @@ Copy `.env.example` to `.env` and set your API keys:
 cp .env.example .env
 ```
 
-### 3. Launch the Studio
+### 3. Launch the Studio & Explorer
 ```bash
 ./run.sh
 ```
-Open [http://localhost:8000](http://localhost:8000) in your browser.
+* **Main Studio**: [http://localhost:8000](http://localhost:8000)
+* **ClickHouse MCP Explorer**: [http://localhost:8000/database](http://localhost:8000/database)
 
 ### 4. Run the Test Suite
 ```bash
 PYTHONPATH=. pytest -v tests/
 ```
 
-### 5. Inspect ClickHouse Ground-Truth Data
+### 5. Inspect ClickHouse Ground-Truth Data via CLI
 ```bash
 python inspect_telemetry.py
 # Or with raw JSON records

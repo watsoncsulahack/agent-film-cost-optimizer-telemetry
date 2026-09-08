@@ -294,6 +294,13 @@ def serve_ui():
     return HTML_CONTENT
 
 
+@app.get("/database", response_class=HTMLResponse)
+@app.get("/telemetry", response_class=HTMLResponse)
+def serve_database_explorer():
+    """Serves the interactive ClickHouse MCP Database & Ground-Truth Telemetry Explorer."""
+    return DATABASE_EXPLORER_HTML
+
+
 HTML_CONTENT = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1378,7 +1385,11 @@ HTML_CONTENT = """<!DOCTYPE html>
       <div class="env-status-badge" id="envStatusBadge">
         <span>🔄 Checking local .env credentials...</span>
       </div>
-      <div style="display:flex; align-items:center; gap:0.75rem;">
+      <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
+        <a href="/database" class="settings-btn" style="text-decoration:none; display:flex; align-items:center; gap:0.45rem; background:rgba(245, 158, 11, 0.15); border-color:rgba(245, 158, 11, 0.4); color:var(--accent-amber); font-weight:700;" title="Explore live ClickHouse MCP Database & Ground-Truth Defect Logs">
+          <span>🏛️</span>
+          <span>ClickHouse MCP Explorer ➔</span>
+        </a>
         <button class="wallet-nav-btn" onclick="openWalletModal()" title="View Autonomous Agent Wallet & Mandates">
           <span>💳</span>
           <span>Agent Wallet:</span>
@@ -1526,6 +1537,14 @@ HTML_CONTENT = """<!DOCTYPE html>
         <div class="stock-grid" id="stockGrid"></div>
       </div>
 
+      <!-- Simulation & Hackathon Demonstration Disclaimer Banner -->
+      <footer style="margin-top:2rem; margin-bottom:1rem; background:rgba(245, 158, 11, 0.06); border:1px solid rgba(245, 158, 11, 0.3); border-radius:0.85rem; padding:1rem 1.25rem; font-size:0.75rem; color:#fde68a; line-height:1.5; display:flex; align-items:flex-start; gap:0.75rem;">
+        <span style="font-size:1.25rem; line-height:1;">⚠️</span>
+        <div>
+          <strong>Demonstration & Simulation Notice:</strong> This system models autonomous AI agent compute micro-transactions (Google AP2 mandate compliance) and empirical defect telemetry for the <em>Agentic Cinema Blockbuster Hackathon</em>. All wallet balances ($10.0000), agent payment authorizations, and API cost debits are <strong>100% simulated in software</strong>. No actual fiat money, credit cards, or external payment rails are charged.
+        </div>
+      </footer>
+
     </div>
 
   </div>
@@ -1585,7 +1604,7 @@ HTML_CONTENT = """<!DOCTYPE html>
             <span>📋 Micro-Payment Transaction Ledger</span>
             <span style="font-size:0.72rem; color:var(--text-secondary); font-family:'JetBrains Mono';">Non-AI Payment Rail</span>
           </div>
-          <div class="table-container" style="max-height:220px; overflow-y:auto;">
+          <div class="table-container" style="max-height:200px; overflow-y:auto;">
             <table>
               <thead>
                 <tr>
@@ -1598,6 +1617,14 @@ HTML_CONTENT = """<!DOCTYPE html>
               </thead>
               <tbody id="walletLedgerBody"></tbody>
             </table>
+          </div>
+        </div>
+
+        <!-- Wallet Simulation Disclaimer -->
+        <div style="background:rgba(245, 158, 11, 0.08); border:1px solid rgba(245, 158, 11, 0.3); border-radius:0.75rem; padding:0.8rem 1rem; font-size:0.74rem; color:#fde68a; line-height:1.5; display:flex; align-items:flex-start; gap:0.6rem;">
+          <span style="font-size:1.1rem; line-height:1;">ℹ️</span>
+          <div>
+            <strong>Simulated Wallet Environment:</strong> Funds added ($5.00, $10.00, etc.) and debited per generation are simulated test credits adhering to Google AP2 cryptographic mandate verification standards.
           </div>
         </div>
       </div>
@@ -2434,8 +2461,830 @@ Telemetry and financial ledger persisted.`);
 </html>
 """
 
+
+DATABASE_EXPLORER_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClickHouse MCP Database Explorer - Agentic Cinema</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #060911;
+      --bg-card: #0d1527;
+      --bg-card-hover: #131f38;
+      --border-color: #1e293b;
+      --border-accent: rgba(245, 158, 11, 0.4);
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --accent-blue: #38bdf8;
+      --accent-emerald: #10b981;
+      --accent-purple: #c084fc;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --font-main: 'Plus Jakarta Sans', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--font-main);
+      min-height: 100vh;
+      padding: 1.5rem 1rem 3rem;
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(245, 158, 11, 0.05) 0%, transparent 40%),
+        radial-gradient(circle at 85% 85%, rgba(56, 189, 248, 0.05) 0%, transparent 40%);
+    }
+
+    .container {
+      max-width: 1360px;
+      margin: 0 auto;
+    }
+
+    /* Top Navigation Bar */
+    .top-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      padding: 0.85rem 1.25rem;
+      background: #090e1a;
+      border: 1px solid var(--border-color);
+      border-radius: 1rem;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .brand-icon {
+      font-size: 1.6rem;
+      background: rgba(245, 158, 11, 0.15);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      padding: 0.4rem 0.6rem;
+      border-radius: 0.6rem;
+    }
+    .brand-title {
+      font-weight: 800;
+      font-size: 1.15rem;
+      letter-spacing: -0.01em;
+      color: #fff;
+    }
+    .brand-sub {
+      font-size: 0.74rem;
+      color: var(--text-secondary);
+    }
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+    .nav-btn {
+      background: #0f172a;
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 0.55rem 0.95rem;
+      border-radius: 0.6rem;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: all 0.15s ease;
+    }
+    .nav-btn:hover {
+      background: #1e293b;
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+    .nav-btn-action {
+      background: var(--accent-amber);
+      color: #000;
+      border: none;
+      padding: 0.55rem 1.1rem;
+      border-radius: 0.6rem;
+      font-size: 0.82rem;
+      font-weight: 800;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: all 0.15s ease;
+    }
+    .nav-btn-action:hover {
+      background: #fbbf24;
+      transform: translateY(-1px);
+    }
+
+    /* Simulation Disclaimer Banner */
+    .disclaimer-banner {
+      background: rgba(245, 158, 11, 0.08);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      border-radius: 0.85rem;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.5rem;
+      font-size: 0.78rem;
+      color: #fde68a;
+      line-height: 1.5;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      box-shadow: 0 4px 20px rgba(245, 158, 11, 0.08);
+    }
+    .disclaimer-icon {
+      font-size: 1.3rem;
+      line-height: 1;
+    }
+
+    /* Status Indicator */
+    .status-strip {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #090e1a;
+      border: 1px solid var(--border-color);
+      border-radius: 0.85rem;
+      padding: 0.75rem 1.25rem;
+      margin-bottom: 1.5rem;
+      font-size: 0.8rem;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.25rem 0.65rem;
+      border-radius: 9999px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+    .status-healthy { background: rgba(16, 185, 129, 0.18); color: var(--accent-emerald); border: 1px solid rgba(16, 185, 129, 0.4); }
+    .status-degraded { background: rgba(245, 158, 11, 0.18); color: var(--accent-amber); border: 1px solid rgba(245, 158, 11, 0.4); }
+
+    /* KPI Hero Cards Deck */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.75rem;
+    }
+    .kpi-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 0.85rem;
+      padding: 1.2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+    .kpi-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+    .kpi-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+    }
+    .kpi-val {
+      font-family: var(--font-mono);
+      font-size: 1.6rem;
+      font-weight: 800;
+      color: #fff;
+    }
+    .kpi-sub {
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+    }
+
+    /* Section Cards */
+    .section-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 1rem;
+      padding: 1.4rem;
+      margin-bottom: 1.75rem;
+    }
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+    .section-title {
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .section-subtitle {
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      margin-top: 0.2rem;
+    }
+
+    /* Filters Bar */
+    .filter-bar {
+      display: flex;
+      gap: 0.6rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .filter-input {
+      background: #060911;
+      border: 1px solid var(--border-color);
+      border-radius: 0.55rem;
+      padding: 0.55rem 0.85rem;
+      color: #fff;
+      font-family: inherit;
+      font-size: 0.82rem;
+      flex-grow: 1;
+      min-width: 220px;
+      outline: none;
+    }
+    .filter-input:focus {
+      border-color: var(--accent-amber);
+    }
+    .filter-select {
+      background: #060911;
+      border: 1px solid var(--border-color);
+      border-radius: 0.55rem;
+      padding: 0.55rem 0.85rem;
+      color: #fff;
+      font-family: inherit;
+      font-size: 0.82rem;
+      outline: none;
+      cursor: pointer;
+    }
+
+    /* Tables */
+    .table-container {
+      overflow-x: auto;
+      border-radius: 0.75rem;
+      border: 1px solid var(--border-color);
+      background: #070c17;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      text-align: left;
+    }
+    th {
+      background: #0d1527;
+      color: var(--text-secondary);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 0.7rem;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border-color);
+      white-space: nowrap;
+    }
+    td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      vertical-align: middle;
+    }
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* Badges & Pills */
+    .tag-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.2rem 0.55rem;
+      border-radius: 0.4rem;
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+    .tag-accepted { background: rgba(16, 185, 129, 0.18); color: var(--accent-emerald); border: 1px solid rgba(16, 185, 129, 0.35); }
+    .tag-discarded { background: rgba(239, 68, 68, 0.18); color: var(--accent-rose); border: 1px solid rgba(239, 68, 68, 0.35); }
+    .tag-defect { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); border: 1px solid rgba(245, 158, 11, 0.3); }
+
+    .multiplier-badge {
+      font-family: var(--font-mono);
+      font-weight: 800;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.35rem;
+      font-size: 0.78rem;
+    }
+    .mult-low { background: rgba(16, 185, 129, 0.2); color: var(--accent-emerald); }
+    .mult-med { background: rgba(245, 158, 11, 0.2); color: var(--accent-amber); }
+    .mult-high { background: rgba(239, 68, 68, 0.2); color: var(--accent-rose); }
+
+    .uuid-link {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--accent-blue);
+      cursor: pointer;
+      text-decoration: underline dotted;
+    }
+    .uuid-link:hover {
+      color: #7dd3fc;
+    }
+
+    /* Collapsible Accordion */
+    .accordion-toggle {
+      width: 100%;
+      background: #090e1a;
+      border: 1px solid var(--border-color);
+      border-radius: 0.6rem;
+      padding: 0.75rem 1rem;
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: background 0.15s;
+    }
+    .accordion-toggle:hover {
+      background: #101726;
+    }
+    .accordion-content {
+      display: none;
+      padding: 1rem;
+      background: #04060b;
+      border: 1px solid var(--border-color);
+      border-top: none;
+      border-bottom-left-radius: 0.6rem;
+      border-bottom-right-radius: 0.6rem;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: #cbd5e1;
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    
+    <!-- Top Nav Header -->
+    <header class="top-nav">
+      <div class="brand-group">
+        <div class="brand-icon">🏛️</div>
+        <div>
+          <div class="brand-title">ClickHouse MCP Telemetry Explorer</div>
+          <div class="brand-sub">Empirical Ground-Truth Database & Director Defect Diagnostics</div>
+        </div>
+      </div>
+      <div class="nav-actions">
+        <a href="/" class="nav-btn">🎬 Back to Studio</a>
+        <button onclick="loadAllTelemetryData()" class="nav-btn-action">🔄 Refresh Data</button>
+        <button onclick="exportJSON()" class="nav-btn">📥 Export JSON</button>
+        <button onclick="exportCSV()" class="nav-btn">📥 Export CSV</button>
+      </div>
+    </header>
+
+    <!-- Prominent Simulation Disclaimer -->
+    <div class="disclaimer-banner">
+      <div class="disclaimer-icon">⚠️</div>
+      <div>
+        <strong>Demonstration & Simulation Notice:</strong> This platform demonstrates autonomous AI agent payment delegation (Google AP2 intent mandate verification) and empirical defect telemetry for the <em>Agentic Cinema: The Blockbuster Hackathon</em>. All wallet pre-funding ($10.0000), agent debits, and compute balances are <strong>100% simulated in software</strong>. No actual fiat currency, credit cards, or live banking rails are utilized.
+      </div>
+    </div>
+
+    <!-- Health & MCP Connection Status Strip -->
+    <div class="status-strip">
+      <div style="display:flex; align-items:center; gap:0.6rem;">
+        <span style="font-weight:700; color:#fff;">ClickHouse MCP Status:</span>
+        <span id="healthBadge" class="status-pill status-healthy">Checking Connection...</span>
+      </div>
+      <div style="font-family:var(--font-mono); font-size:0.75rem; color:var(--text-secondary);">
+        Target Table: <span style="color:var(--accent-amber); font-weight:700;">generation_telemetry</span> (MergeTree)
+      </div>
+    </div>
+
+    <!-- KPI Metrics Hero Grid -->
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Total Sessions Tracked</div>
+        <div class="kpi-val" id="totalSessionsVal" style="color:var(--accent-blue);">0</div>
+        <div class="kpi-sub">Empirical generations logged</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Total Realized Spend</div>
+        <div class="kpi-val" id="totalSpendVal" style="color:var(--accent-emerald);">$0.0000</div>
+        <div class="kpi-sub">Simulated compute billing</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Overall Acceptance Rate</div>
+        <div class="kpi-val" id="overallAcceptVal" style="color:var(--accent-purple);">0.0%</div>
+        <div class="kpi-sub">Director shot approval ratio</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Average Rerun Multiplier</div>
+        <div class="kpi-val" id="avgRerunVal" style="color:var(--accent-amber);">1.00x</div>
+        <div class="kpi-sub">Realized / baseline quote</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Active Tracked Models</div>
+        <div class="kpi-val" id="activeModelsVal" style="color:#fff;">0</div>
+        <div class="kpi-sub">Distinct generative engines</div>
+      </div>
+    </div>
+
+    <!-- SECTION 1: EMPIRICAL MODEL MULTIPLIER MATRIX -->
+    <div class="section-card">
+      <div class="section-header">
+        <div>
+          <div class="section-title">📊 Empirical Model Performance & Ground-Truth Multipliers</div>
+          <div class="section-subtitle">Aggregated metrics feeding intelligence back into Cost Optimizer Agent recommendations</div>
+        </div>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Model Name</th>
+              <th>Total Runs</th>
+              <th>Accepted</th>
+              <th>Acceptance Rate</th>
+              <th>Avg Reruns</th>
+              <th>Base Quote</th>
+              <th>Avg Realized Cost</th>
+              <th>Empirical Multiplier</th>
+            </tr>
+          </thead>
+          <tbody id="modelsTableBody">
+            <tr><td colspan="8" style="text-align:center; color:var(--text-secondary); padding:2rem;">Loading model analytics...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- SECTION 2: RAW INGESTION RECORDS TABLE -->
+    <div class="section-card">
+      <div class="section-header">
+        <div>
+          <div class="section-title">📋 ClickHouse Ingestion Log & Defect Diagnostics (`generation_telemetry`)</div>
+          <div class="section-subtitle">Per-shot empirical records dispatched via MCP stdio JSON-RPC protocol</div>
+        </div>
+      </div>
+
+      <!-- Filter Controls -->
+      <div class="filter-bar">
+        <input type="text" id="filterSearch" class="filter-input" placeholder="🔍 Search prompt text, model name, or qualitative notes..." oninput="filterRecords()">
+        <select id="filterModel" class="filter-select" onchange="filterRecords()">
+          <option value="ALL">All Models</option>
+        </select>
+        <select id="filterOutcome" class="filter-select" onchange="filterRecords()">
+          <option value="ALL">All Outcomes</option>
+          <option value="1">✅ Accepted (1)</option>
+          <option value="0">❌ Discarded (0)</option>
+        </select>
+        <select id="filterCategory" class="filter-select" onchange="filterRecords()">
+          <option value="ALL">All Defect Categories</option>
+          <option value="motion_artifact">🪢 Motion Artifact</option>
+          <option value="physics_anatomy_defect">📐 Physics / Anatomy</option>
+          <option value="lighting_inconsistency">💡 Lighting Inconsistency</option>
+          <option value="camera_trajectory">🎥 Camera Trajectory</option>
+          <option value="prompt_deviation">🎯 Prompt Deviation</option>
+          <option value="temporal_flicker">⏱️ Temporal Flicker</option>
+          <option value="aesthetic_tweak">✨ Aesthetic Tweak</option>
+          <option value="budget_exceeded">💰 Budget Exceeded</option>
+          <option value="approved">✅ Approved</option>
+          <option value="unspecified">Unspecified</option>
+        </select>
+        <select id="filterLimit" class="filter-select" onchange="loadAllTelemetryData()">
+          <option value="50">Last 50 Records</option>
+          <option value="100" selected>Last 100 Records</option>
+          <option value="250">Last 250 Records</option>
+          <option value="500">Last 500 Records</option>
+        </select>
+      </div>
+
+      <!-- Records Table -->
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Session ID</th>
+              <th>Timestamp</th>
+              <th>Model Name</th>
+              <th>Prompt Snippet</th>
+              <th>Base Quote</th>
+              <th>Reruns</th>
+              <th>Total Cost</th>
+              <th>Outcome</th>
+              <th>Defect Category</th>
+              <th>Director Feedback Notes</th>
+            </tr>
+          </thead>
+          <tbody id="recordsTableBody">
+            <tr><td colspan="10" style="text-align:center; color:var(--text-secondary); padding:2rem;">Loading telemetry records...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- SECTION 3: CLICKHOUSE DDL SCHEMA & ARCHITECTURE VIEWER -->
+    <div class="section-card">
+      <div class="section-header">
+        <div>
+          <div class="section-title">🏛️ ClickHouse DDL & Model Context Protocol (MCP) Architecture</div>
+          <div class="section-subtitle">Formal schema definition and stdio JSON-RPC telemetry egress specification</div>
+        </div>
+      </div>
+      <button class="accordion-toggle" onclick="toggleAccordion('ddlAccordion')">
+        <span>📜 ClickHouse DDL Table Definition (`generation_telemetry`)</span>
+        <span id="ddlAccordionArrow">▼</span>
+      </button>
+      <div id="ddlAccordion" class="accordion-content">CREATE TABLE IF NOT EXISTS generation_telemetry (
+    session_id UUID,
+    prompt_text String,
+    suggested_model LowCardinality(String),
+    base_api_cost Float32,
+    total_rerun_count Int32,
+    total_session_cost Float32,
+    user_accepted UInt8,
+    feedback_category LowCardinality(String) DEFAULT 'unspecified',
+    director_feedback String DEFAULT '',
+    created_at DateTime DEFAULT now()
+) ENGINE = MergeTree()
+ORDER BY (suggested_model, created_at);</div>
+    </div>
+
+  </div>
+
+  <script>
+    let allRecordsCache = [];
+    let allModelsCache = [];
+
+    async function loadAllTelemetryData() {
+      const limit = document.getElementById('filterLimit').value || 100;
+      
+      // 1. Health Status
+      try {
+        const healthRes = await fetch('/api/telemetry/health');
+        const health = await healthRes.json();
+        const badge = document.getElementById('healthBadge');
+        if (health.clickhouse_table_ready) {
+          badge.textContent = '🟢 ClickHouse MCP Ready';
+          badge.className = 'status-pill status-healthy';
+        } else {
+          badge.textContent = '🟡 Local Fallback Active (ClickHouse Offline)';
+          badge.className = 'status-pill status-degraded';
+        }
+      } catch (e) {
+        document.getElementById('healthBadge').textContent = '🟡 Local Fallback Active';
+        document.getElementById('healthBadge').className = 'status-pill status-degraded';
+      }
+
+      // 2. Summary KPI Metrics
+      try {
+        const sumRes = await fetch('/api/telemetry/metrics/summary');
+        const summary = await sumRes.json();
+        document.getElementById('totalSessionsVal').textContent = summary.total_sessions.toLocaleString();
+        document.getElementById('totalSpendVal').textContent = '$' + summary.total_pipeline_spend.toFixed(4);
+        document.getElementById('overallAcceptVal').textContent = (summary.overall_acceptance_rate * 100).toFixed(1) + '%';
+        document.getElementById('activeModelsVal').textContent = summary.models.length;
+
+        // Calculate average multiplier across models
+        if (summary.models.length > 0) {
+          const avgMult = summary.models.reduce((acc, m) => acc + m.effective_cost_multiplier, 0) / summary.models.length;
+          document.getElementById('avgRerunVal').textContent = avgMult.toFixed(2) + 'x';
+        }
+      } catch (e) {
+        console.warn("Summary fetch:", e);
+      }
+
+      // 3. Model Empirical Stats Matrix
+      try {
+        const modelsRes = await fetch('/api/telemetry/metrics/models');
+        allModelsCache = await modelsRes.json();
+        renderModelsTable(allModelsCache);
+        populateModelFilterDropdown(allModelsCache);
+      } catch (e) {
+        console.warn("Models fetch:", e);
+      }
+
+      // 4. Raw Session Records
+      try {
+        const recRes = await fetch(`/api/telemetry/records?limit=${limit}`);
+        allRecordsCache = await recRes.json();
+        renderRecordsTable(allRecordsCache);
+      } catch (e) {
+        console.warn("Records fetch:", e);
+        document.getElementById('recordsTableBody').innerHTML = '<tr><td colspan="10" style="text-align:center; color:var(--accent-rose); padding:2rem;">Failed to load records from ClickHouse MCP.</td></tr>';
+      }
+    }
+
+    function renderModelsTable(models) {
+      const tbody = document.getElementById('modelsTableBody');
+      if (!models || models.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-secondary); padding:2rem;">No empirical data recorded yet. Run video generations to populate metrics.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = models.map(m => {
+        const multClass = m.effective_cost_multiplier <= 1.5 ? 'mult-low' : (m.effective_cost_multiplier <= 2.5 ? 'mult-med' : 'mult-high');
+        const accPct = (m.acceptance_rate * 100).toFixed(1);
+        return `
+          <tr>
+            <td style="font-weight:700; color:#fff;">${escapeHtml(m.suggested_model)}</td>
+            <td style="font-family:var(--font-mono); font-weight:700;">${m.total_sessions}</td>
+            <td style="font-family:var(--font-mono); color:var(--accent-emerald);">${m.accepted_sessions}</td>
+            <td>
+              <div style="display:flex; align-items:center; gap:0.5rem;">
+                <div style="flex-grow:1; max-width:80px; height:6px; background:rgba(255,255,255,0.08); border-radius:9999px; overflow:hidden;">
+                  <div style="height:100%; width:${accPct}%; background:var(--accent-emerald); border-radius:9999px;"></div>
+                </div>
+                <span style="font-family:var(--font-mono); font-size:0.75rem;">${accPct}%</span>
+              </div>
+            </td>
+            <td style="font-family:var(--font-mono);">${m.avg_rerun_count.toFixed(2)}</td>
+            <td style="font-family:var(--font-mono);">$${m.avg_base_cost.toFixed(4)}</td>
+            <td style="font-family:var(--font-mono); color:var(--accent-amber); font-weight:700;">$${m.avg_total_cost.toFixed(4)}</td>
+            <td>
+              <span class="multiplier-badge ${multClass}">${m.effective_cost_multiplier.toFixed(2)}x Realized</span>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderRecordsTable(records) {
+      const tbody = document.getElementById('recordsTableBody');
+      if (!records || records.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; color:var(--text-secondary); padding:2rem;">No telemetry records match current filters.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = records.map(r => {
+        const isAccepted = r.user_accepted === 1;
+        const outcomeTag = isAccepted 
+          ? '<span class="tag-badge tag-accepted">✅ Accepted</span>' 
+          : '<span class="tag-badge tag-discarded">❌ Discarded</span>';
+        
+        const cat = r.feedback_category || 'unspecified';
+        const catBadge = cat !== 'unspecified' && cat !== 'approved'
+          ? `<span class="tag-badge tag-defect">${escapeHtml(cat)}</span>`
+          : `<span style="color:var(--text-secondary); font-size:0.75rem;">${escapeHtml(cat)}</span>`;
+
+        const shortUuid = r.session_id ? r.session_id.substring(0, 8) + '...' : 'N/A';
+        const promptSnippet = r.prompt_text ? (r.prompt_text.length > 55 ? r.prompt_text.substring(0, 55) + '...' : r.prompt_text) : 'N/A';
+        const feedbackSnippet = r.director_feedback || '<span style="color:var(--text-secondary);">-</span>';
+
+        return `
+          <tr>
+            <td>
+              <span class="uuid-link" onclick="copyText('${r.session_id}')" title="Click to copy full UUID: ${r.session_id}">
+                ${shortUuid}
+              </span>
+            </td>
+            <td style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-secondary); white-space:nowrap;">
+              ${escapeHtml(r.created_at || '')}
+            </td>
+            <td style="font-weight:700; color:#fff; white-space:nowrap;">${escapeHtml(r.suggested_model || '')}</td>
+            <td style="font-size:0.78rem; max-width:240px;" title="${escapeHtml(r.prompt_text || '')}">
+              ${escapeHtml(promptSnippet)}
+            </td>
+            <td style="font-family:var(--font-mono);">$${parseFloat(r.base_api_cost || 0).toFixed(4)}</td>
+            <td style="font-family:var(--font-mono); text-align:center;">${r.total_rerun_count || 0}</td>
+            <td style="font-family:var(--font-mono); color:var(--accent-amber); font-weight:700;">
+              $${parseFloat(r.total_session_cost || 0).toFixed(4)}
+            </td>
+            <td>${outcomeTag}</td>
+            <td>${catBadge}</td>
+            <td style="font-size:0.78rem; max-width:200px;">${feedbackSnippet}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function populateModelFilterDropdown(models) {
+      const select = document.getElementById('filterModel');
+      const current = select.value;
+      select.innerHTML = '<option value="ALL">All Models</option>';
+      models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.suggested_model;
+        opt.textContent = m.suggested_model;
+        select.appendChild(opt);
+      });
+      select.value = current || 'ALL';
+    }
+
+    function filterRecords() {
+      const query = (document.getElementById('filterSearch').value || '').toLowerCase().trim();
+      const model = document.getElementById('filterModel').value;
+      const outcome = document.getElementById('filterOutcome').value;
+      const category = document.getElementById('filterCategory').value;
+
+      const filtered = allRecordsCache.filter(r => {
+        if (model !== 'ALL' && r.suggested_model !== model) return false;
+        if (outcome !== 'ALL' && String(r.user_accepted) !== outcome) return false;
+        if (category !== 'ALL' && (r.feedback_category || 'unspecified') !== category) return false;
+        if (query) {
+          const matchPrompt = (r.prompt_text || '').toLowerCase().includes(query);
+          const matchModel = (r.suggested_model || '').toLowerCase().includes(query);
+          const matchNotes = (r.director_feedback || '').toLowerCase().includes(query);
+          const matchId = (r.session_id || '').toLowerCase().includes(query);
+          if (!matchPrompt && !matchModel && !matchNotes && !matchId) return false;
+        }
+        return true;
+      });
+
+      renderRecordsTable(filtered);
+    }
+
+    function exportJSON() {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(allRecordsCache, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `clickhouse_telemetry_${Date.now()}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+    }
+
+    function exportCSV() {
+      if (!allRecordsCache || allRecordsCache.length === 0) return alert("No records available to export.");
+      const headers = ["session_id", "created_at", "suggested_model", "prompt_text", "base_api_cost", "total_rerun_count", "total_session_cost", "user_accepted", "feedback_category", "director_feedback"];
+      const rows = allRecordsCache.map(r => [
+        `"${r.session_id || ''}"`,
+        `"${r.created_at || ''}"`,
+        `"${(r.suggested_model || '').replace(/"/g, '""')}"`,
+        `"${(r.prompt_text || '').replace(/"/g, '""')}"`,
+        parseFloat(r.base_api_cost || 0).toFixed(4),
+        r.total_rerun_count || 0,
+        parseFloat(r.total_session_cost || 0).toFixed(4),
+        r.user_accepted || 0,
+        `"${r.feedback_category || 'unspecified'}"`,
+        `"${(r.director_feedback || '').replace(/"/g, '""')}"`
+      ]);
+      const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\\n");
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", encodeURI(csvContent));
+      downloadAnchor.setAttribute("download", `clickhouse_telemetry_${Date.now()}.csv`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+    }
+
+    function copyText(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        alert("Copied Session UUID to clipboard: " + text);
+      }).catch(() => {});
+    }
+
+    function toggleAccordion(id) {
+      const content = document.getElementById(id);
+      const arrow = document.getElementById(id + 'Arrow');
+      if (content.style.display === 'block') {
+        content.style.display = 'none';
+        if (arrow) arrow.textContent = '▼';
+      } else {
+        content.style.display = 'block';
+        if (arrow) arrow.textContent = '▲';
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    // Auto-load on page render
+    window.addEventListener('DOMContentLoaded', loadAllTelemetryData);
+  </script>
+</body>
+</html>
+"""
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     print(f"🎬 Starting Studio Server on http://0.0.0.0:{port} ...")
     uvicorn.run("web_app:app", host="0.0.0.0", port=port, reload=False)
+

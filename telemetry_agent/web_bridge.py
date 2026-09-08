@@ -117,6 +117,15 @@ async def get_telemetry_summary():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@telemetry_router.get("/records")
+async def get_all_records(limit: int = Query(100, ge=1, le=1000)):
+    """Fetches individual session telemetry records from ClickHouse MCP."""
+    try:
+        return await default_client.mcp_client.fetch_all_records(limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @telemetry_router.get("/health")
 async def health_check():
     """Healthcheck verifying database readiness."""

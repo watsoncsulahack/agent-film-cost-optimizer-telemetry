@@ -364,3 +364,87 @@ class ClickHouseMCPClient:
             total_pipeline_spend=round(total_spend, 4),
             models=models_stats,
         )
+
+    async def fetch_all_records(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Queries ClickHouse for individual session telemetry records."""
+        query = f"""
+        SELECT
+            session_id,
+            created_at,
+            prompt_text,
+            suggested_model,
+            base_api_cost,
+            total_rerun_count,
+            total_session_cost,
+            user_accepted,
+            feedback_category,
+            director_feedback
+        FROM {self.table_name}
+        ORDER BY created_at DESC
+        LIMIT {limit}
+        """
+        result = await self.execute_query_via_mcp(query)
+        records: List[Dict[str, Any]] = []
+
+        if not result["success"] or not result["raw_result"]:
+            return self._fetch_records_from_fallback(limit)
+
+        try:
+            raw = result["raw_result"]
+            lines = [l.strip() for l in raw.split("\n") if l.strip()]
+            for line in lines:
+                parts = [p.strip() for p in line.split("\t")]
+                if len(parts) < 10:
+                    parts = [p.strip() for p in line.split(",")]
+                if len(parts) >= 8:
+                    try:
+                        records.append({
+                            "session_id": parts[0],
+                            "created_at": parts[1] if len(parts) > 1 else "",
+                            "prompt_text": parts[2] if len(parts) > 2 else "",
+                            "suggested_model": parts[3] if len(parts) > 3 else "",
+                            "base_api_cost": float(parts[4]) if len(parts) > 4 else 0.0,
+                            "total_rerun_count": int(parts[5]) if len(parts) > 5 else 0,
+                            "total_session_cost": float(parts[6]) if len(parts) > 6 else 0.0,
+                            "user_accepted": int(parts[7]) if len(parts) > 7 else 0,
+                            "feedback_category": parts[8] if len(parts) > 8 else "unspecified",
+                            "director_feedback": parts[9] if len(parts) > 9 else "",
+                        })
+                    except Exception:
+                        continue
+        except Exception as e:
+            logger.warning("Failed to parse ClickHouse raw records: %s", str(e))
+
+        if not records:
+            return self._fetch_records_from_fallback(limit)
+
+        return records
+
+    def _fetch_records_from_fallback(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Reads individual session records from local JSON Lines fallback."""
+        if not os.path.exists(self.fallback_file):
+            return []
+        records = []
+        try:
+            with open(self.fallback_file, "r", encoding="utf-8") as f:
+                lines = [l.strip() for l in f if l.strip()]
+                for line in reversed(lines[-limit:]):
+                    try:
+                        data = json.loads(line)
+                        records.append({
+                            "session_id": str(data.get("session_id", "")),
+                            "created_at": str(data.get("created_at", data.get("_logged_at", ""))),
+                            "prompt_text": str(data.get("prompt_text", "")),
+                            "suggested_model": str(data.get("suggested_model", "")),
+                            "base_api_cost": float(data.get("base_api_cost", 0.0)),
+                            "total_rerun_count": int(data.get("total_rerun_count", 0)),
+                            "total_session_cost": float(data.get("total_session_cost", 0.0)),
+                            "user_accepted": int(data.get("user_accepted", 0)),
+                            "feedback_category": str(data.get("feedback_category", "unspecified")),
+                            "director_feedback": str(data.get("director_feedback", "")),
+                        })
+                    except json.JSONDecodeError:
+                        continue
+        except Exception as e:
+            logger.warning("Error reading records from fallback log: %s", str(e))
+        return records

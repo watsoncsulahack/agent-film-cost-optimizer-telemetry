@@ -1,17 +1,39 @@
 """Pydantic data schemas and payload models for Telemetry Agent."""
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
+import uuid
 from uuid import UUID, uuid4
 from pydantic import BaseModel, Field, field_validator
 
 
+def parse_uuid_flexible(v: Any) -> UUID:
+    """Safely converts UUID, standard UUID strings, or custom session strings into valid UUIDs."""
+    if isinstance(v, UUID):
+        return v
+    if isinstance(v, str):
+        v_clean = v.strip()
+        try:
+            return UUID(v_clean)
+        except ValueError:
+            # Deterministically convert custom strings (e.g. 'session-abc123') to a valid UUIDv5
+            return uuid.uuid5(uuid.NAMESPACE_DNS, v_clean)
+    if v is None:
+        return uuid4()
+    return UUID(str(v))
+
+
 class SessionInitPayload(BaseModel):
     """Payload to initialize a telemetry tracking session (FR-1)."""
-    session_id: UUID = Field(default_factory=uuid4, description="Unique UUID for generation session")
+    session_id: Union[UUID, str] = Field(default_factory=uuid4, description="Unique UUID for generation session")
     prompt_text: str = Field(..., min_length=1, description="Raw text prompt for video shot")
     suggested_model: str = Field(..., min_length=1, description="Video model selected (e.g., Runway Gen-3, Sora, Luma Ray 2)")
     base_api_cost: float = Field(..., ge=0.0, description="Baseline API quote for single generation")
+
+    @field_validator("session_id", mode="before")
+    @classmethod
+    def validate_session_id(cls, v: Any) -> UUID:
+        return parse_uuid_flexible(v)
 
     @field_validator("base_api_cost")
     @classmethod
@@ -21,12 +43,17 @@ class SessionInitPayload(BaseModel):
 
 class RerunPayload(BaseModel):
     """Payload for generation retry / rejection event with director feedback (FR-2)."""
-    session_id: UUID = Field(..., description="Active session UUID")
+    session_id: Union[UUID, str] = Field(..., description="Active session UUID")
     incremental_cost: Optional[float] = Field(None, ge=0.0, description="Cost of rerun; defaults to base_api_cost if omitted")
     reason: Optional[str] = Field(None, description="Optional filmmaker rejection reason")
     adjusted_prompt: Optional[str] = Field(None, description="Optional prompt adjustment")
     feedback_category: Optional[str] = Field(default="unspecified", description="Issue category (e.g. motion_artifact, physics_defect, lighting, camera_motion, prompt_hallucination)")
     director_feedback: Optional[str] = Field(default="", description="Detailed qualitative feedback notes from filmmaker")
+
+    @field_validator("session_id", mode="before")
+    @classmethod
+    def validate_session_id(cls, v: Any) -> UUID:
+        return parse_uuid_flexible(v)
 
     @field_validator("incremental_cost")
     @classmethod
@@ -38,16 +65,21 @@ class RerunPayload(BaseModel):
 
 class TerminalPayload(BaseModel):
     """Payload for terminal event - acceptance or abandonment with feedback (FR-3)."""
-    session_id: UUID = Field(..., description="Active session UUID")
+    session_id: Union[UUID, str] = Field(..., description="Active session UUID")
     user_accepted: bool = Field(..., description="True if accepted/downloaded, False if abandoned/timed out")
     reason: Optional[str] = Field(None, description="Optional terminal outcome reason (e.g., 'downloaded', 'idle_timeout', 'canceled')")
     feedback_category: Optional[str] = Field(default="unspecified", description="Reason category for discard or approval")
     director_feedback: Optional[str] = Field(default="", description="Detailed qualitative feedback notes")
 
+    @field_validator("session_id", mode="before")
+    @classmethod
+    def validate_session_id(cls, v: Any) -> UUID:
+        return parse_uuid_flexible(v)
+
 
 class TelemetryRecord(BaseModel):
     """Structured telemetry record matching the ClickHouse generation_telemetry schema."""
-    session_id: UUID = Field(..., description="UUID for generation workflow")
+    session_id: Union[UUID, str] = Field(..., description="UUID for generation workflow")
     prompt_text: str = Field(..., description="Raw text prompt used for generation run")
     suggested_model: str = Field(..., description="Video model executed")
     base_api_cost: float = Field(..., description="Estimated baseline cost for single generation")
@@ -57,6 +89,11 @@ class TelemetryRecord(BaseModel):
     feedback_category: str = Field(default="unspecified", description="Issue or outcome category")
     director_feedback: str = Field(default="", description="Director qualitative notes")
     created_at: datetime = Field(default_factory=datetime.utcnow, description="UTC commit timestamp")
+
+    @field_validator("session_id", mode="before")
+    @classmethod
+    def validate_session_id(cls, v: Any) -> UUID:
+        return parse_uuid_flexible(v)
 
     @field_validator("base_api_cost", "total_session_cost")
     @classmethod

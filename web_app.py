@@ -31,10 +31,15 @@ from pydantic import BaseModel, Field
 load_dotenv(".env")
 load_dotenv("/home/allan/ai-film/.env")
 
-# Ensure sibling repository (/home/allan/ai-film) is accessible for import
+# Ensure current workspace is first in sys.path
+CURRENT_DIR = os.path.abspath(os.path.dirname(__file__))
+if CURRENT_DIR not in sys.path:
+    sys.path.insert(0, CURRENT_DIR)
+
+# Optional sibling repository (/home/allan/ai-film) fallback if needed
 AI_FILM_DIR = "/home/allan/ai-film"
 if os.path.exists(AI_FILM_DIR) and AI_FILM_DIR not in sys.path:
-    sys.path.insert(0, AI_FILM_DIR)
+    sys.path.append(AI_FILM_DIR)
 
 # Import Cost Optimization Agent components
 try:
@@ -2350,6 +2355,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       const topGrid = document.getElementById('topChoicesGrid');
       topGrid.innerHTML = evalData.top_3_choices.map((m, idx) => {
         const isRec = idx === 0;
+        const multLabel = m.is_empirical && m.empirical_multiplier ? `${m.empirical_multiplier}x 📊 Empirical` : `${evalData.rerun_multiplier}x`;
         return `
           <div class="choice-card ${isRec ? 'rank-1' : ''}">
             <div>
@@ -2362,10 +2368,11 @@ HTML_CONTENT = """<!DOCTYPE html>
                   <div style="font-family:'JetBrains Mono'; font-weight:700; color:#fff;">$${m.single_shot_cost_usd.toFixed(4)}</div>
                 </div>
                 <div style="text-align:right;">
-                  <div class="choice-cost-label">Total Realized (${evalData.rerun_multiplier}x)</div>
+                  <div class="choice-cost-label">Total Realized (${multLabel})</div>
                   <div class="choice-cost-val">$${m.total_estimated_cost_usd.toFixed(4)}</div>
                 </div>
               </div>
+              ${m.is_empirical ? `<div style="margin:0.5rem 0; font-size:0.75rem; color:var(--accent-emerald); background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.3); border-radius:4px; padding:0.25rem 0.5rem; display:flex; align-items:center; gap:0.35rem;"><span>📊 Calibrated by ClickHouse ground-truth telemetry</span></div>` : ''}
               <ul class="choice-features-list">
                 ${m.strengths.slice(0, 3).map(s => `<li>${s}</li>`).join('')}
               </ul>
@@ -2401,7 +2408,10 @@ HTML_CONTENT = """<!DOCTYPE html>
           <td>${m.provider}</td>
           <td style="font-family:'JetBrains Mono';">$${m.rate_per_second_usd.toFixed(4)}</td>
           <td style="font-family:'JetBrains Mono';">$${m.single_shot_cost_usd.toFixed(4)}</td>
-          <td style="font-family:'JetBrains Mono'; font-weight:700; color:var(--accent-emerald);">$${m.total_estimated_cost_usd.toFixed(4)}</td>
+          <td>
+            <div style="font-family:'JetBrains Mono'; font-weight:700; color:var(--accent-emerald);">$${m.total_estimated_cost_usd.toFixed(4)}</div>
+            ${m.is_empirical && m.empirical_multiplier ? `<div style="font-size:0.7rem; color:var(--accent-emerald);">📊 ${m.empirical_multiplier}x empirical</div>` : ''}
+          </td>
           <td><span class="tag-pill" style="background:rgba(56, 189, 248, 0.15); color:var(--accent-blue);">${m.quality_score}/100</span></td>
           <td>
             <button class="settings-btn" style="padding:0.25rem 0.6rem; font-size:0.75rem; border-color:var(--accent-blue); color:var(--accent-blue);" onclick="openTelemetryModal('${m.model_name}', '${m.provider}', ${m.single_shot_cost_usd})">
@@ -2454,9 +2464,11 @@ HTML_CONTENT = """<!DOCTYPE html>
       // 1. Debit Agent Wallet for initial generation
       debitWallet(baseCost, modelName, false);
 
-      // 2. Initialize Session
+      // 2. Initialize Session with standard UUID
       const promptText = document.getElementById('shotInput').value.trim();
-      const sessionId = 'session-' + Math.random().toString(36).substring(2, 10);
+      const sessionId = (typeof crypto !== 'undefined' && crypto.randomUUID) 
+        ? crypto.randomUUID() 
+        : ('10000000-1000-4000-8000-100000000000'.replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)));
 
       activeSession = {
         id: sessionId,

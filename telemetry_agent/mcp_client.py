@@ -182,8 +182,15 @@ class ClickHouseMCPClient:
                     secure=self.secure,
                 )
 
-            res = self._ch_client.command(query)
-            return {"success": True, "raw_result": str(res), "error": None}
+            clean_q = query.strip()
+            if clean_q.upper().startswith("SELECT") or clean_q.upper().startswith("SHOW") or clean_q.upper().startswith("DESCRIBE"):
+                q_res = self._ch_client.query(clean_q)
+                rows = q_res.result_rows
+                tsv_lines = ["\t".join(str(val) if val is not None else "" for val in row) for row in rows]
+                return {"success": True, "raw_result": "\n".join(tsv_lines), "error": None, "rows": rows}
+            else:
+                res = self._ch_client.command(clean_q)
+                return {"success": True, "raw_result": str(res), "error": None}
         except Exception as e:
             err_msg = f"Native ClickHouse fallback also failed: {str(e)} (Initial MCP error: {mcp_error})"
             logger.error(err_msg)

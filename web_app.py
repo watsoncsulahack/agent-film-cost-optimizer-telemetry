@@ -88,17 +88,108 @@ class WorkflowAnalysisRequest(BaseModel):
     override_capabilities: Optional[List[str]] = None
 
 
+class ClickHouseConfigPayload(BaseModel):
+    host: Optional[str] = None
+    port: Optional[int] = None
+    user: Optional[str] = None
+    password: Optional[str] = None
+    api_key: Optional[str] = None
+    database: Optional[str] = None
+    secure: Optional[bool] = None
+
+
 @app.get("/api/config")
 def get_system_config():
     """Returns whether local .env API keys exist so UI can auto-configure seamlessly."""
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
     parallel_key = os.environ.get("PARALLEL_API_KEY", "").strip()
+    ch_host = getattr(config, "clickhouse_host", "localhost")
+    ch_port = getattr(config, "clickhouse_port", 8123)
+    ch_user = getattr(config, "clickhouse_user", "default")
+    ch_pass = getattr(config, "clickhouse_password", "") or getattr(config, "clickhouse_api_key", "")
+    ch_db = getattr(config, "clickhouse_database", "default")
+    ch_sec = getattr(config, "clickhouse_secure", False)
+
     return {
         "has_gemini_env": bool(gemini_key),
         "has_parallel_env": bool(parallel_key),
         "gemini_hint": f"Configured via .env ({gemini_key[:4]}...{gemini_key[-4:]})" if gemini_key else "Not configured in .env",
         "parallel_hint": f"Configured via .env ({parallel_key[:4]}...{parallel_key[-4:]})" if parallel_key else "Not configured in .env",
+        "clickhouse": {
+            "host": ch_host,
+            "port": ch_port,
+            "user": ch_user,
+            "database": ch_db,
+            "secure": ch_sec,
+            "has_credentials": bool(ch_pass),
+            "key_hint": f"{ch_pass[:4]}...{ch_pass[-4:]}" if len(ch_pass) > 8 else ("Configured" if ch_pass else "Not set"),
+        }
     }
+
+
+@app.post("/api/telemetry/configure")
+async def configure_telemetry_endpoint(payload: ClickHouseConfigPayload):
+    """Dynamically updates ClickHouse connection credentials and tests connectivity."""
+    try:
+        if payload.host is not None and payload.host.strip():
+            config.clickhouse_host = payload.host.strip()
+            default_client.mcp_client.host = config.clickhouse_host
+        if payload.port is not None:
+            config.clickhouse_port = int(payload.port)
+            default_client.mcp_client.port = config.clickhouse_port
+        if payload.user is not None and payload.user.strip():
+            config.clickhouse_user = payload.user.strip()
+            default_client.mcp_client.user = config.clickhouse_user
+        if payload.password is not None or payload.api_key is not None:
+            val = (payload.password or payload.api_key or "").strip()
+            if val:
+                config.clickhouse_password = val
+                config.clickhouse_api_key = val
+                default_client.mcp_client.password = val
+        if payload.database is not None and payload.database.strip():
+            config.clickhouse_database = payload.database.strip()
+            default_client.mcp_client.database = config.clickhouse_database
+        if payload.secure is not None:
+            config.clickhouse_secure = bool(payload.secure)
+            default_client.mcp_client.secure = config.clickhouse_secure
+
+        # Reset lazy client to force reconnection with new credentials
+        default_client.mcp_client._ch_client = None
+        default_client.mcp_client._initialized_table = False
+
+        table_ok = await default_client.mcp_client.ensure_table_exists()
+        ping_res = await default_client.mcp_client.execute_query_via_mcp("SELECT 1")
+
+        if table_ok and ping_res.get("success"):
+            return {
+                "success": True,
+                "status": "healthy",
+                "message": f"Successfully connected to ClickHouse at {config.clickhouse_host}:{config.clickhouse_port} (Table '{config.telemetry_table_name}' verified)!",
+                "clickhouse_table_ready": True,
+                "host": config.clickhouse_host,
+                "port": config.clickhouse_port,
+                "user": config.clickhouse_user,
+                "database": config.clickhouse_database,
+                "secure": config.clickhouse_secure,
+            }
+        else:
+            err = ping_res.get("error") or "Could not initialize ClickHouse table"
+            return {
+                "success": False,
+                "status": "error",
+                "message": f"Connection test failed: {err}",
+                "clickhouse_table_ready": False,
+                "host": config.clickhouse_host,
+                "port": config.clickhouse_port,
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "status": "error",
+            "message": f"Configuration error: {str(e)}",
+            "clickhouse_table_ready": False,
+        }
+
 
 
 @app.get("/api/models")
@@ -204,14 +295,31 @@ async def analyze_workflow(request: WorkflowAnalysisRequest):
         except Exception as exc:
             log_event("Parallel Search API", f"Stock Footage search completed ({str(exc)})", "warning")
 
+    # 3.5 ClickHouse MCP Closed-Loop Intelligence
+    empirical_multipliers = {}
+    try:
+        model_stats = await default_client.async_get_model_insights()
+        for stat in model_stats:
+            if stat.total_sessions >= 1 and stat.effective_cost_multiplier > 0:
+                empirical_multipliers[stat.suggested_model] = stat.effective_cost_multiplier
+        if empirical_multipliers:
+            log_event(
+                "ClickHouse MCP",
+                f"Ingested {len(empirical_multipliers)} empirical multipliers from ground-truth telemetry",
+                "done"
+            )
+    except Exception as ch_err:
+        log_event("ClickHouse MCP", "Telemetry loop inactive (using baseline multipliers)", "warning")
+
     # 4. Cost Engine Execution
-    log_event("Cost Engine", "Normalizing pricing and evaluating model suitability...", "running")
+    log_event("Cost Engine", "Normalizing pricing and evaluating model suitability with empirical intelligence...", "running")
     if HAS_UPSTREAM_AGENT:
         evaluation = run_cost_engine(
             shot_requirements=shot_reqs,
             duration_seconds=request.duration_seconds,
             rerun_multiplier=request.rerun_multiplier,
             override_essential_capabilities=request.override_capabilities,
+            empirical_multipliers=empirical_multipliers if empirical_multipliers else None,
         )
         viable_count = len(evaluation.viable_models)
         elim_count = len(evaluation.eliminated_models)
@@ -1395,26 +1503,88 @@ HTML_CONTENT = """<!DOCTYPE html>
           <span>Agent Wallet:</span>
           <span class="wallet-balance-badge" id="navWalletBalance">$10.0000</span>
         </button>
-        <button class="settings-btn" onclick="toggleSettings()">⚙️ API Keys</button>
+        <button class="settings-btn" onclick="toggleSettings()">⚙️ API Keys & ClickHouse</button>
       </div>
     </div>
 
     <div class="settings-panel" id="settingsPanel">
-      <div style="font-weight:700; font-size:0.9rem; color:#fff;">API Keys Configuration</div>
-      <div style="font-size:0.75rem; color:var(--text-secondary); margin-top:0.2rem;">
-        Self-hosted instances read from <code>.env</code> automatically. Override here if desired for hosted environments.
-      </div>
-      <div class="settings-inputs">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
         <div>
-          <label style="font-size:0.78rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">GEMINI_API_KEY (for Google Gemini reasoning)</label>
+          <div style="font-weight:700; font-size:0.95rem; color:#fff;">⚙️ System Credentials & ClickHouse MCP Configuration</div>
+          <div style="font-size:0.75rem; color:var(--text-secondary); margin-top:0.2rem;">
+            Self-hosted instances auto-load from <code>.env</code>. Override or connect your ClickHouse Cloud instance here for hosted environments.
+          </div>
+        </div>
+        <div style="display:flex; gap:0.4rem;">
+          <button type="button" class="preset-pill" onclick="applyStudioCHPreset('cloud')">⚡ ClickHouse Cloud</button>
+          <button type="button" class="preset-pill" onclick="applyStudioCHPreset('local')">💻 Local Docker</button>
+        </div>
+      </div>
+
+      <div class="settings-inputs" style="margin-top:1rem;">
+        <div>
+          <label style="font-size:0.76rem; font-weight:700; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">GEMINI_API_KEY (Google Gemini 2.5 Flash)</label>
           <input type="password" id="geminiKeyInput" class="api-input" placeholder="AIzaSy... (or loaded from .env)">
         </div>
         <div>
-          <label style="font-size:0.78rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">PARALLEL_API_KEY (for live Parallel Search API)</label>
+          <label style="font-size:0.76rem; font-weight:700; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">PARALLEL_API_KEY (Parallel Search API)</label>
           <input type="password" id="parallelKeyInput" class="api-input" placeholder="HAqbfkHi... (or loaded from .env)">
         </div>
       </div>
+
+      <div style="margin-top:1.1rem; padding-top:1rem; border-top:1px solid rgba(255,255,255,0.06);">
+        <div style="font-weight:700; font-size:0.85rem; color:var(--accent-amber); margin-bottom:0.6rem; display:flex; align-items:center; gap:0.4rem;">
+          <span>🏛️</span>
+          <span>ClickHouse MCP Empirical Database Settings</span>
+        </div>
+        <div style="display:grid; grid-template-columns: 2fr 1fr 1fr; gap:0.75rem;">
+          <div>
+            <label style="font-size:0.74rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">ClickHouse Host</label>
+            <input type="text" id="chHostInput" class="api-input" placeholder="localhost or your-id.clickhouse.cloud">
+          </div>
+          <div>
+            <label style="font-size:0.74rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">Port</label>
+            <input type="number" id="chPortInput" class="api-input" placeholder="8123 (local) or 8443 (cloud)">
+          </div>
+          <div>
+            <label style="font-size:0.74rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">Username</label>
+            <input type="text" id="chUserInput" class="api-input" placeholder="default">
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns: 2fr 1fr 1fr; gap:0.75rem; margin-top:0.75rem;">
+          <div>
+            <label style="font-size:0.74rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">ClickHouse API Key / Password</label>
+            <input type="password" id="chPasswordInput" class="api-input" placeholder="Enter ClickHouse API Key or cluster password">
+          </div>
+          <div>
+            <label style="font-size:0.74rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">Database</label>
+            <input type="text" id="chDbInput" class="api-input" placeholder="default" value="default">
+          </div>
+          <div style="display:flex; flex-direction:column; justify-content:center;">
+            <label style="font-size:0.74rem; color:var(--text-secondary); display:block; margin-bottom:0.35rem;">Secure SSL</label>
+            <label style="display:flex; align-items:center; gap:0.45rem; font-size:0.78rem; color:#fff; cursor:pointer;">
+              <input type="checkbox" id="chSecureInput"> SSL (Port 8443)
+            </label>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:1rem; flex-wrap:wrap; gap:0.6rem;">
+          <div id="studioCHStatusMsg" style="font-size:0.78rem; font-family:var(--font-mono); color:var(--text-secondary);">
+            Status: Ready
+          </div>
+          <div style="display:flex; gap:0.6rem;">
+            <button type="button" class="settings-btn" onclick="testClickHouseConnectionStudio()" style="background:rgba(56, 189, 248, 0.15); border-color:var(--accent-blue); color:var(--accent-blue);">
+              🔌 Test ClickHouse Connection
+            </button>
+            <button type="button" class="btn-primary-optimize" onclick="saveAllStudioSettings()" style="padding:0.45rem 1rem; font-size:0.82rem; margin:0;">
+              💾 Save & Apply Keys
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
+
 
     <!-- PROMPT & CONFIGURATION SECTION (PHASE 1A) -->
     <div class="input-box" id="inputBox">
@@ -1835,9 +2005,55 @@ HTML_CONTENT = """<!DOCTYPE html>
 
     // --- On Page Load ---
     document.addEventListener('DOMContentLoaded', async () => {
-      checkEnvConfig();
+      loadSavedStudioSettings();
       renderWalletUI();
     });
+
+    function applyStudioCHPreset(type) {
+      if (type === 'cloud') {
+        document.getElementById('chPortInput').value = '8443';
+        document.getElementById('chSecureInput').checked = true;
+        if (!document.getElementById('chHostInput').value || document.getElementById('chHostInput').value === 'localhost') {
+          document.getElementById('chHostInput').value = '';
+          document.getElementById('chHostInput').placeholder = 'your-cluster.us-east-1.aws.clickhouse.cloud';
+        }
+      } else {
+        document.getElementById('chHostInput').value = 'localhost';
+        document.getElementById('chPortInput').value = '8123';
+        document.getElementById('chUserInput').value = 'default';
+        document.getElementById('chPasswordInput').value = 'clickhouse';
+        document.getElementById('chSecureInput').checked = false;
+      }
+    }
+
+    async function loadSavedStudioSettings() {
+      try {
+        const resp = await fetch('/api/config');
+        const data = await resp.json();
+        
+        const savedGemini = localStorage.getItem('GEMINI_API_KEY') || '';
+        const savedParallel = localStorage.getItem('PARALLEL_API_KEY') || '';
+        const savedCHHost = localStorage.getItem('CLICKHOUSE_HOST') || (data.clickhouse ? data.clickhouse.host : 'localhost');
+        const savedCHPort = localStorage.getItem('CLICKHOUSE_PORT') || (data.clickhouse ? data.clickhouse.port : '8123');
+        const savedCHUser = localStorage.getItem('CLICKHOUSE_USER') || (data.clickhouse ? data.clickhouse.user : 'default');
+        const savedCHPass = localStorage.getItem('CLICKHOUSE_PASSWORD') || localStorage.getItem('CLICKHOUSE_API_KEY') || '';
+        const savedCHDb = localStorage.getItem('CLICKHOUSE_DATABASE') || (data.clickhouse ? data.clickhouse.database : 'default');
+        const savedCHSec = localStorage.getItem('CLICKHOUSE_SECURE') === 'true' || (data.clickhouse ? data.clickhouse.secure : false);
+
+        if (savedGemini) document.getElementById('geminiKeyInput').value = savedGemini;
+        if (savedParallel) document.getElementById('parallelKeyInput').value = savedParallel;
+        document.getElementById('chHostInput').value = savedCHHost;
+        document.getElementById('chPortInput').value = savedCHPort;
+        document.getElementById('chUserInput').value = savedCHUser;
+        if (savedCHPass) document.getElementById('chPasswordInput').value = savedCHPass;
+        document.getElementById('chDbInput').value = savedCHDb;
+        document.getElementById('chSecureInput').checked = savedCHSec;
+
+        checkEnvConfig();
+      } catch (err) {
+        console.warn("Config load error:", err);
+      }
+    }
 
     // --- Check .env Configuration ---
     async function checkEnvConfig() {
@@ -1845,22 +2061,84 @@ HTML_CONTENT = """<!DOCTYPE html>
         const resp = await fetch('/api/config');
         const data = await resp.json();
         const badge = document.getElementById('envStatusBadge');
-        if (data.has_gemini_env && data.has_parallel_env) {
-          badge.innerHTML = '<span>✅ .env Active: Gemini + Parallel APIs Ready</span>';
-        } else if (data.has_gemini_env) {
-          badge.innerHTML = '<span>⚡ .env Active: Gemini Ready (Parallel Missing)</span>';
+        const savedGemini = localStorage.getItem('GEMINI_API_KEY');
+        const savedParallel = localStorage.getItem('PARALLEL_API_KEY');
+
+        if ((data.has_gemini_env || savedGemini) && (data.has_parallel_env || savedParallel)) {
+          badge.innerHTML = '<span>✅ Credentials Active: Gemini + Parallel + ClickHouse Ready</span>';
+        } else if (data.has_gemini_env || savedGemini) {
+          badge.innerHTML = '<span>⚡ Gemini Active: Parallel Search Optional</span>';
         } else {
-          badge.innerHTML = '<span style="color:var(--accent-amber);">⚠️ API Keys needed in .env or Settings</span>';
+          badge.innerHTML = '<span style="color:var(--accent-amber);">⚠️ API Keys needed in Settings or .env</span>';
         }
       } catch (err) {
         console.warn("Config check error:", err);
       }
     }
 
+    async function testClickHouseConnectionStudio() {
+      const msg = document.getElementById('studioCHStatusMsg');
+      msg.innerHTML = '<span style="color:var(--accent-blue);">🔄 Testing connection to ClickHouse...</span>';
+      
+      const payload = {
+        host: document.getElementById('chHostInput').value.trim() || 'localhost',
+        port: parseInt(document.getElementById('chPortInput').value) || 8123,
+        user: document.getElementById('chUserInput').value.trim() || 'default',
+        password: document.getElementById('chPasswordInput').value.trim(),
+        api_key: document.getElementById('chPasswordInput').value.trim(),
+        database: document.getElementById('chDbInput').value.trim() || 'default',
+        secure: document.getElementById('chSecureInput').checked
+      };
+
+      try {
+        const resp = await fetch('/api/telemetry/configure', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const res = await resp.json();
+        if (res.success) {
+          msg.innerHTML = `<span style="color:var(--accent-emerald);">🟢 Connected! ${res.message}</span>`;
+        } else {
+          msg.innerHTML = `<span style="color:var(--accent-rose);">🔴 ${res.message}</span>`;
+        }
+      } catch (e) {
+        msg.innerHTML = `<span style="color:var(--accent-rose);">🔴 Network error: ${e.message}</span>`;
+      }
+    }
+
+    async function saveAllStudioSettings() {
+      const gemini = document.getElementById('geminiKeyInput').value.trim();
+      const parallel = document.getElementById('parallelKeyInput').value.trim();
+      if (gemini) localStorage.setItem('GEMINI_API_KEY', gemini);
+      if (parallel) localStorage.setItem('PARALLEL_API_KEY', parallel);
+
+      const chHost = document.getElementById('chHostInput').value.trim();
+      const chPort = document.getElementById('chPortInput').value.trim();
+      const chUser = document.getElementById('chUserInput').value.trim();
+      const chPass = document.getElementById('chPasswordInput').value.trim();
+      const chDb = document.getElementById('chDbInput').value.trim();
+      const chSec = document.getElementById('chSecureInput').checked;
+
+      if (chHost) localStorage.setItem('CLICKHOUSE_HOST', chHost);
+      if (chPort) localStorage.setItem('CLICKHOUSE_PORT', chPort);
+      if (chUser) localStorage.setItem('CLICKHOUSE_USER', chUser);
+      if (chPass) {
+        localStorage.setItem('CLICKHOUSE_PASSWORD', chPass);
+        localStorage.setItem('CLICKHOUSE_API_KEY', chPass);
+      }
+      if (chDb) localStorage.setItem('CLICKHOUSE_DATABASE', chDb);
+      localStorage.setItem('CLICKHOUSE_SECURE', chSec ? 'true' : 'false');
+
+      await testClickHouseConnectionStudio();
+      checkEnvConfig();
+    }
+
     function toggleSettings() {
       const panel = document.getElementById('settingsPanel');
       panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
     }
+
 
     function updateSliderLabels() {
       document.getElementById('durationVal').textContent = document.getElementById('durationSlider').value + 's';
@@ -2870,14 +3148,81 @@ DATABASE_EXPLORER_HTML = """<!DOCTYPE html>
 
     <!-- Health & MCP Connection Status Strip -->
     <div class="status-strip">
-      <div style="display:flex; align-items:center; gap:0.6rem;">
+      <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
         <span style="font-weight:700; color:#fff;">ClickHouse MCP Status:</span>
         <span id="healthBadge" class="status-pill status-healthy">Checking Connection...</span>
+        <button onclick="toggleCHDrawer()" class="settings-btn" style="background:rgba(245, 158, 11, 0.15); border-color:rgba(245, 158, 11, 0.4); color:var(--accent-amber); font-weight:700; cursor:pointer;" title="Configure ClickHouse Cloud credentials or API Key">
+          ⚙️ ClickHouse API & Connection Settings
+        </button>
       </div>
       <div style="font-family:var(--font-mono); font-size:0.75rem; color:var(--text-secondary);">
         Target Table: <span style="color:var(--accent-amber); font-weight:700;">generation_telemetry</span> (MergeTree)
       </div>
     </div>
+
+    <!-- ClickHouse Cloud & API Key Configuration Drawer -->
+    <div id="chConfigDrawer" style="display:none; background:#0a0f1d; border:1px solid rgba(245, 158, 11, 0.4); border-radius:0.85rem; padding:1.25rem 1.5rem; margin-bottom:1.5rem; box-shadow:0 8px 30px rgba(0,0,0,0.4);">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:1rem;">
+        <div>
+          <div style="font-weight:800; font-size:1.05rem; color:#fff; display:flex; align-items:center; gap:0.5rem;">
+            <span>⚙️</span>
+            <span>ClickHouse Database & API Credentials</span>
+          </div>
+          <div style="font-size:0.78rem; color:var(--text-secondary); margin-top:0.2rem;">
+            Connect directly to ClickHouse Cloud or a custom cluster to stream live empirical defect telemetry via MCP.
+          </div>
+        </div>
+        <div style="display:flex; gap:0.4rem;">
+          <button type="button" class="preset-pill" onclick="applyCHDrawerPreset('cloud')">⚡ ClickHouse Cloud</button>
+          <button type="button" class="preset-pill" onclick="applyCHDrawerPreset('local')">💻 Local Docker</button>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 2fr 1fr 1fr; gap:0.75rem;">
+        <div>
+          <label style="font-size:0.76rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">Host (Domain or IP)</label>
+          <input type="text" id="drawerCHHost" class="filter-input" style="width:100%; font-family:var(--font-mono);" placeholder="e.g. your-cluster.clickhouse.cloud or localhost">
+        </div>
+        <div>
+          <label style="font-size:0.76rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">Port</label>
+          <input type="number" id="drawerCHPort" class="filter-input" style="width:100%; font-family:var(--font-mono);" placeholder="8443 (Cloud) or 8123 (Local)">
+        </div>
+        <div>
+          <label style="font-size:0.76rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">Username</label>
+          <input type="text" id="drawerCHUser" class="filter-input" style="width:100%; font-family:var(--font-mono);" placeholder="default">
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 2fr 1fr 1fr; gap:0.75rem; margin-top:0.75rem;">
+        <div>
+          <label style="font-size:0.76rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">ClickHouse API Key / Password</label>
+          <input type="password" id="drawerCHPassword" class="filter-input" style="width:100%; font-family:var(--font-mono);" placeholder="Enter API Key or Cluster Password">
+        </div>
+        <div>
+          <label style="font-size:0.76rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">Database</label>
+          <input type="text" id="drawerCHDatabase" class="filter-input" style="width:100%; font-family:var(--font-mono);" placeholder="default" value="default">
+        </div>
+        <div style="display:flex; flex-direction:column; justify-content:center;">
+          <label style="font-size:0.76rem; color:var(--text-secondary); display:block; margin-bottom:0.35rem;">Secure SSL</label>
+          <label style="display:flex; align-items:center; gap:0.45rem; font-size:0.8rem; color:#fff; cursor:pointer;">
+            <input type="checkbox" id="drawerCHSecure"> SSL (Port 8443)
+          </label>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:1.1rem; flex-wrap:wrap; gap:0.75rem;">
+        <div id="drawerCHStatus" style="font-size:0.8rem; font-family:var(--font-mono); color:var(--text-secondary);">
+          Status: Ready to connect
+        </div>
+        <div style="display:flex; gap:0.6rem;">
+          <button type="button" class="nav-btn" onclick="toggleCHDrawer()">Close</button>
+          <button type="button" class="nav-btn-action" onclick="testAndSaveCHDrawer()" style="background:linear-gradient(135deg, #f59e0b, #d97706); border:none; cursor:pointer;">
+            🔌 Test & Connect to ClickHouse
+          </button>
+        </div>
+      </div>
+    </div>
+
 
     <!-- KPI Metrics Hero Grid -->
     <div class="kpi-grid">
@@ -3035,6 +3380,109 @@ ORDER BY (suggested_model, created_at);</div>
     let allRecordsCache = [];
     let allModelsCache = [];
 
+    document.addEventListener('DOMContentLoaded', () => {
+      loadSavedCHDrawerSettings();
+      loadAllTelemetryData();
+    });
+
+    function toggleCHDrawer() {
+      const drawer = document.getElementById('chConfigDrawer');
+      drawer.style.display = drawer.style.display === 'block' ? 'none' : 'block';
+    }
+
+    function applyCHDrawerPreset(type) {
+      if (type === 'cloud') {
+        document.getElementById('drawerCHPort').value = '8443';
+        document.getElementById('drawerCHSecure').checked = true;
+        if (!document.getElementById('drawerCHHost').value || document.getElementById('drawerCHHost').value === 'localhost') {
+          document.getElementById('drawerCHHost').value = '';
+          document.getElementById('drawerCHHost').placeholder = 'your-cluster.us-east-1.aws.clickhouse.cloud';
+        }
+      } else {
+        document.getElementById('drawerCHHost').value = 'localhost';
+        document.getElementById('drawerCHPort').value = '8123';
+        document.getElementById('drawerCHUser').value = 'default';
+        document.getElementById('drawerCHPassword').value = 'clickhouse';
+        document.getElementById('drawerCHSecure').checked = false;
+      }
+    }
+
+    async function loadSavedCHDrawerSettings() {
+      try {
+        const resp = await fetch('/api/config');
+        const data = await resp.json();
+        
+        const host = localStorage.getItem('CLICKHOUSE_HOST') || (data.clickhouse ? data.clickhouse.host : 'localhost');
+        const port = localStorage.getItem('CLICKHOUSE_PORT') || (data.clickhouse ? data.clickhouse.port : '8123');
+        const user = localStorage.getItem('CLICKHOUSE_USER') || (data.clickhouse ? data.clickhouse.user : 'default');
+        const pass = localStorage.getItem('CLICKHOUSE_PASSWORD') || localStorage.getItem('CLICKHOUSE_API_KEY') || '';
+        const db = localStorage.getItem('CLICKHOUSE_DATABASE') || (data.clickhouse ? data.clickhouse.database : 'default');
+        const sec = localStorage.getItem('CLICKHOUSE_SECURE') === 'true' || (data.clickhouse ? data.clickhouse.secure : false);
+
+        document.getElementById('drawerCHHost').value = host;
+        document.getElementById('drawerCHPort').value = port;
+        document.getElementById('drawerCHUser').value = user;
+        if (pass) document.getElementById('drawerCHPassword').value = pass;
+        document.getElementById('drawerCHDatabase').value = db;
+        document.getElementById('drawerCHSecure').checked = sec;
+      } catch (err) {
+        console.warn("Error loading drawer config:", err);
+      }
+    }
+
+    async function testAndSaveCHDrawer() {
+      const statusEl = document.getElementById('drawerCHStatus');
+      statusEl.innerHTML = '<span style="color:var(--accent-blue);">🔄 Connecting to ClickHouse and verifying table...</span>';
+
+      const host = document.getElementById('drawerCHHost').value.trim() || 'localhost';
+      const port = parseInt(document.getElementById('drawerCHPort').value) || 8123;
+      const user = document.getElementById('drawerCHUser').value.trim() || 'default';
+      const pass = document.getElementById('drawerCHPassword').value.trim();
+      const db = document.getElementById('drawerCHDatabase').value.trim() || 'default';
+      const sec = document.getElementById('drawerCHSecure').checked;
+
+      const payload = {
+        host: host,
+        port: port,
+        user: user,
+        password: pass,
+        api_key: pass,
+        database: db,
+        secure: sec
+      };
+
+      try {
+        const resp = await fetch('/api/telemetry/configure', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const res = await resp.json();
+        
+        if (res.success) {
+          statusEl.innerHTML = `<span style="color:var(--accent-emerald);">🟢 Connected! ${res.message}</span>`;
+          localStorage.setItem('CLICKHOUSE_HOST', host);
+          localStorage.setItem('CLICKHOUSE_PORT', port);
+          localStorage.setItem('CLICKHOUSE_USER', user);
+          if (pass) {
+            localStorage.setItem('CLICKHOUSE_PASSWORD', pass);
+            localStorage.setItem('CLICKHOUSE_API_KEY', pass);
+          }
+          localStorage.setItem('CLICKHOUSE_DATABASE', db);
+          localStorage.setItem('CLICKHOUSE_SECURE', sec ? 'true' : 'false');
+
+          setTimeout(() => {
+            loadAllTelemetryData();
+            toggleCHDrawer();
+          }, 1200);
+        } else {
+          statusEl.innerHTML = `<span style="color:var(--accent-rose);">🔴 ${res.message}</span>`;
+        }
+      } catch (e) {
+        statusEl.innerHTML = `<span style="color:var(--accent-rose);">🔴 Network error: ${e.message}</span>`;
+      }
+    }
+
     async function loadAllTelemetryData() {
       const limit = document.getElementById('filterLimit').value || 100;
       
@@ -3050,6 +3498,7 @@ ORDER BY (suggested_model, created_at);</div>
           badge.textContent = '🟡 Local Fallback Active (ClickHouse Offline)';
           badge.className = 'status-pill status-degraded';
         }
+
       } catch (e) {
         document.getElementById('healthBadge').textContent = '🟡 Local Fallback Active';
         document.getElementById('healthBadge').className = 'status-pill status-degraded';

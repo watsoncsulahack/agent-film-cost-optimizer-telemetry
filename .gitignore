@@ -1,0 +1,26 @@
+# Environment & secrets
+.env
+*.env
+*.env.local
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Logs & Fallback persistence
+*.log
+telemetry_fallback.jsonl
+
+# Temporary and backup files
+*~
+*.swp
+.DS_Store
+.idea/
+.vscode/

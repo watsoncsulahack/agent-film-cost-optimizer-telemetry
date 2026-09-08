@@ -34,13 +34,15 @@ class ActiveSessionState:
         self.total_rerun_count: int = 0
         self.total_session_cost: float = init_payload.base_api_cost
         self.user_accepted: Optional[int] = None
+        self.feedback_category: str = "unspecified"
+        self.director_feedback: str = ""
         self.created_at: datetime = datetime.utcnow()
         self.last_activity_at: datetime = datetime.utcnow()
         self.locked: bool = False
         self.watchdog_task: Optional[asyncio.Task] = None
 
     def record_rerun(self, rerun_payload: RerunPayload) -> None:
-        """Increments rerun count and accumulates incremental API cost (FR-2)."""
+        """Increments rerun count and accumulates incremental API cost with feedback (FR-2)."""
         if self.locked:
             logger.warning("Attempted to rerun already locked session %s", self.session_id)
             return
@@ -52,19 +54,33 @@ class ActiveSessionState:
 
         if rerun_payload.adjusted_prompt:
             self.prompt_text = rerun_payload.adjusted_prompt
+        if rerun_payload.feedback_category:
+            self.feedback_category = rerun_payload.feedback_category
+        if rerun_payload.director_feedback:
+            self.director_feedback = rerun_payload.director_feedback
 
         logger.info(
-            "Session %s rerun #%d recorded (+ $%.4f, total realized cost: $%.4f)",
+            "Session %s rerun #%d recorded (+ $%.4f, total realized cost: $%.4f, category: %s)",
             self.session_id,
             self.total_rerun_count,
             cost_to_add,
             self.total_session_cost,
+            self.feedback_category,
         )
 
-    def lock_terminal_state(self, accepted: bool) -> TelemetryRecord:
+    def lock_terminal_state(
+        self,
+        accepted: bool,
+        feedback_category: Optional[str] = None,
+        director_feedback: Optional[str] = None,
+    ) -> TelemetryRecord:
         """Locks counters and creates the finalized TelemetryRecord (FR-3)."""
         self.locked = True
         self.user_accepted = 1 if accepted else 0
+        if feedback_category is not None:
+            self.feedback_category = feedback_category
+        if director_feedback is not None:
+            self.director_feedback = director_feedback
 
         # Cancel idle watchdog timer if active
         if self.watchdog_task and not self.watchdog_task.done():
@@ -81,6 +97,8 @@ class ActiveSessionState:
             total_rerun_count=self.total_rerun_count,
             total_session_cost=round(self.total_session_cost, 4),
             user_accepted=self.user_accepted,
+            feedback_category=self.feedback_category or "unspecified",
+            director_feedback=self.director_feedback or "",
             created_at=self.created_at,
         )
 
@@ -179,7 +197,11 @@ class TelemetrySessionManager:
                 logger.warning("Cannot complete session: %s not found in active buffers", payload.session_id)
                 return self._completed_records.get(payload.session_id)
 
-            record = state.lock_terminal_state(accepted=payload.user_accepted)
+            record = state.lock_terminal_state(
+                accepted=payload.user_accepted,
+                feedback_category=payload.feedback_category,
+                director_feedback=payload.director_feedback,
+            )
             self._completed_records[payload.session_id] = record
 
         # Dispatch egress in background

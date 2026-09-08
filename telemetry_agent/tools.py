@@ -65,14 +65,18 @@ def record_generation_rerun(
     incremental_cost: Optional[float] = None,
     reason: Optional[str] = None,
     adjusted_prompt: Optional[str] = None,
+    feedback_category: Optional[str] = "unspecified",
+    director_feedback: Optional[str] = "",
 ) -> str:
-    """Records a user rejection / retry / regeneration event for an active session.
+    """Records a user rejection / retry / regeneration event with defect feedback.
 
     Args:
         session_id: Active session UUID string.
         incremental_cost: Optional additional API cost for this rerun; defaults to base cost.
         reason: Optional user feedback reason for regeneration.
         adjusted_prompt: Optional modified shot prompt.
+        feedback_category: Issue category (e.g. motion_artifact, physics_defect, lighting, camera_motion, prompt_hallucination).
+        director_feedback: Detailed qualitative notes from director.
 
     Returns:
         JSON string with updated rerun count and cumulative realized cost.
@@ -84,6 +88,8 @@ def record_generation_rerun(
             incremental_cost=incremental_cost,
             reason=reason,
             adjusted_prompt=adjusted_prompt,
+            feedback_category=feedback_category,
+            director_feedback=director_feedback,
         )
         import asyncio
         try:
@@ -96,6 +102,7 @@ def record_generation_rerun(
                     "session_id": str(uid),
                     "total_rerun_count": state.total_rerun_count,
                     "total_session_cost": state.total_session_cost,
+                    "feedback_category": state.feedback_category,
                 })
             else:
                 return json.dumps({"status": "not_found", "session_id": session_id})
@@ -107,6 +114,7 @@ def record_generation_rerun(
                     "session_id": str(uid),
                     "total_rerun_count": state.total_rerun_count,
                     "total_session_cost": state.total_session_cost,
+                    "feedback_category": state.feedback_category,
                 })
             return json.dumps({"status": "not_found", "session_id": session_id})
     except Exception as e:
@@ -117,13 +125,17 @@ def record_generation_outcome(
     session_id: str,
     accepted: bool,
     reason: Optional[str] = None,
+    feedback_category: Optional[str] = "unspecified",
+    director_feedback: Optional[str] = "",
 ) -> str:
-    """Records the final terminal outcome (acceptance or abandonment) and triggers ClickHouse MCP persistence.
+    """Records the final terminal outcome (acceptance or discard) and triggers ClickHouse MCP persistence.
 
     Args:
         session_id: Active session UUID string.
         accepted: True if user downloaded/accepted the shot, False if abandoned/canceled.
         reason: Optional description of outcome.
+        feedback_category: Reason or defect category if rejected or approved.
+        director_feedback: Qualitative notes or discard reasons.
 
     Returns:
         JSON string summarizing finalized session telemetry.
@@ -134,6 +146,8 @@ def record_generation_outcome(
             session_id=uid,
             user_accepted=accepted,
             reason=reason,
+            feedback_category=feedback_category,
+            director_feedback=director_feedback,
         )
         import asyncio
         try:
@@ -143,6 +157,7 @@ def record_generation_outcome(
                 "status": "terminal_recorded",
                 "session_id": str(uid),
                 "user_accepted": 1 if accepted else 0,
+                "feedback_category": feedback_category,
                 "message": "Persisting telemetry to ClickHouse via MCP.",
             })
         except RuntimeError:
@@ -154,6 +169,7 @@ def record_generation_outcome(
                     "user_accepted": record.user_accepted,
                     "total_rerun_count": record.total_rerun_count,
                     "total_session_cost": record.total_session_cost,
+                    "feedback_category": record.feedback_category,
                 })
             return json.dumps({"status": "not_found", "session_id": session_id})
     except Exception as e:

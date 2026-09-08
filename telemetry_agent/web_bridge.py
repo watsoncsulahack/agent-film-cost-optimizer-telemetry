@@ -55,6 +55,8 @@ async def record_rerun(payload: RerunPayload):
             incremental_cost=payload.incremental_cost,
             reason=payload.reason,
             adjusted_prompt=payload.adjusted_prompt,
+            feedback_category=payload.feedback_category,
+            director_feedback=payload.director_feedback,
         )
         state = default_client.session_manager.get_active_session(payload.session_id)
         return {
@@ -62,6 +64,7 @@ async def record_rerun(payload: RerunPayload):
             "session_id": str(payload.session_id),
             "total_rerun_count": state.total_rerun_count if state else 0,
             "total_session_cost": state.total_session_cost if state else 0.0,
+            "feedback_category": state.feedback_category if state else "unspecified",
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -75,6 +78,8 @@ async def complete_session(payload: TerminalPayload):
             session_id=payload.session_id,
             accepted=payload.user_accepted,
             reason=payload.reason,
+            feedback_category=payload.feedback_category,
+            director_feedback=payload.director_feedback,
         )
         if not record:
             return {
@@ -88,6 +93,7 @@ async def complete_session(payload: TerminalPayload):
             "user_accepted": record.user_accepted,
             "total_rerun_count": record.total_rerun_count,
             "total_session_cost": record.total_session_cost,
+            "feedback_category": record.feedback_category,
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

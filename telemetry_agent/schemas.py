@@ -20,11 +20,13 @@ class SessionInitPayload(BaseModel):
 
 
 class RerunPayload(BaseModel):
-    """Payload for generation retry / rejection event (FR-2)."""
+    """Payload for generation retry / rejection event with director feedback (FR-2)."""
     session_id: UUID = Field(..., description="Active session UUID")
     incremental_cost: Optional[float] = Field(None, ge=0.0, description="Cost of rerun; defaults to base_api_cost if omitted")
     reason: Optional[str] = Field(None, description="Optional filmmaker rejection reason")
     adjusted_prompt: Optional[str] = Field(None, description="Optional prompt adjustment")
+    feedback_category: Optional[str] = Field(default="unspecified", description="Issue category (e.g. motion_artifact, physics_defect, lighting, camera_motion, prompt_hallucination)")
+    director_feedback: Optional[str] = Field(default="", description="Detailed qualitative feedback notes from filmmaker")
 
     @field_validator("incremental_cost")
     @classmethod
@@ -35,10 +37,12 @@ class RerunPayload(BaseModel):
 
 
 class TerminalPayload(BaseModel):
-    """Payload for terminal event - acceptance or abandonment (FR-3)."""
+    """Payload for terminal event - acceptance or abandonment with feedback (FR-3)."""
     session_id: UUID = Field(..., description="Active session UUID")
     user_accepted: bool = Field(..., description="True if accepted/downloaded, False if abandoned/timed out")
     reason: Optional[str] = Field(None, description="Optional terminal outcome reason (e.g., 'downloaded', 'idle_timeout', 'canceled')")
+    feedback_category: Optional[str] = Field(default="unspecified", description="Reason category for discard or approval")
+    director_feedback: Optional[str] = Field(default="", description="Detailed qualitative feedback notes")
 
 
 class TelemetryRecord(BaseModel):
@@ -50,6 +54,8 @@ class TelemetryRecord(BaseModel):
     total_rerun_count: int = Field(default=0, ge=0, description="Total number of regeneration retries attempted")
     total_session_cost: float = Field(..., ge=0.0, description="Cumulative API cost incurred across all retries")
     user_accepted: int = Field(..., ge=0, le=1, description="1 if accepted, 0 if rejected/abandoned")
+    feedback_category: str = Field(default="unspecified", description="Issue or outcome category")
+    director_feedback: str = Field(default="", description="Director qualitative notes")
     created_at: datetime = Field(default_factory=datetime.utcnow, description="UTC commit timestamp")
 
     @field_validator("base_api_cost", "total_session_cost")
@@ -60,17 +66,18 @@ class TelemetryRecord(BaseModel):
 
     def to_sql_insert(self, table_name: str = "generation_telemetry") -> str:
         """Generates a sanitized ClickHouse SQL INSERT query string."""
-        # Sanitize prompt string to escape single quotes and newlines
         sanitized_prompt = self.prompt_text.replace("'", "''").replace("\n", " ")
         sanitized_model = self.suggested_model.replace("'", "''")
+        sanitized_cat = (self.feedback_category or "unspecified").replace("'", "''")
+        sanitized_feedback = (self.director_feedback or "").replace("'", "''").replace("\n", " ")
         dt_str = self.created_at.strftime("%Y-%m-%d %H:%M:%S")
 
         return (
             f"INSERT INTO {table_name} "
-            f"(session_id, prompt_text, suggested_model, base_api_cost, total_rerun_count, total_session_cost, user_accepted, created_at) "
+            f"(session_id, prompt_text, suggested_model, base_api_cost, total_rerun_count, total_session_cost, user_accepted, feedback_category, director_feedback, created_at) "
             f"VALUES ('{str(self.session_id)}', '{sanitized_prompt}', '{sanitized_model}', "
             f"{self.base_api_cost:.4f}, {self.total_rerun_count}, {self.total_session_cost:.4f}, "
-            f"{self.user_accepted}, '{dt_str}')"
+            f"{self.user_accepted}, '{sanitized_cat}', '{sanitized_feedback}', '{dt_str}')"
         )
 
 
@@ -83,7 +90,7 @@ class ModelEmpiricalStats(BaseModel):
     avg_rerun_count: float
     avg_base_cost: float
     avg_total_cost: float
-    effective_cost_multiplier: float  # avg_total_cost / avg_base_cost
+    effective_cost_multiplier: float
 
 
 class TelemetrySummary(BaseModel):

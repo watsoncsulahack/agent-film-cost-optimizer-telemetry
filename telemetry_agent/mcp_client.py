@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS {table_name} (
     total_rerun_count Int32,
     total_session_cost Float32,
     user_accepted UInt8,
+    feedback_category LowCardinality(String) DEFAULT 'unspecified',
+    director_feedback String DEFAULT '',
     created_at DateTime DEFAULT now()
 ) ENGINE = MergeTree()
 ORDER BY (suggested_model, created_at);

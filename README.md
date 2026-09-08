@@ -27,25 +27,27 @@ The **Cost Optimization Telemetry Agent** provides autonomous empirical telemetr
 
 ```mermaid
 flowchart TD
-    Director[🎬 Director / Filmmaker] -->|Shot Prompt| COA[Cost Optimization Agent\nai-film / Parallel Track]
-    COA -->|Recommended Model & Quote| UI[Review & Generation Studio]
+    Director["🎬 Director / Filmmaker"] -->|"Shot Prompt"| COA["Cost Optimization Agent<br/>ai-film / Parallel Track"]
+    COA -->|"Recommended Model & Quote"| UI["Review & Generation Studio"]
     
-    UI -->|Google AP2 Intent Mandate| WALLET[Director Agent Wallet\nPre-Fund & Micro-Debit]
-    WALLET -->|10s Cinematic Render Flow| PREVIEW[Interactive Mini Video Player]
+    UI -->|"Google AP2 Intent Mandate"| WALLET["Director Agent Wallet<br/>Pre-Fund & Micro-Debit"]
+    WALLET -->|"10s Cinematic Render Flow"| PREVIEW["Interactive Mini Video Player"]
     
-    PREVIEW --> DEC{Director Decision}
-    DEC -->|🔄 Regenerate (+ Cost)| RERUN[Debit Incremental Cost & Log Rerun]
-    RERUN --> TEL[Cost Optimization Telemetry Agent\nai-films-telemetry / ClickHouse Track]
+    PREVIEW --> DEC{"Director Decision"}
+    DEC -->|"🔄 Regenerate (+ Cost)"| SURV1["Director Defect Survey<br/>Category & Qualitative Notes"]
+    SURV1 --> RERUN["Debit Incremental Cost & Log Rerun"]
+    RERUN --> TEL["Cost Optimization Telemetry Agent<br/>ai-films-telemetry / ClickHouse Track"]
     RERUN -.-> PREVIEW
     
-    DEC -->|✅ Accept & Download| ACC[user_accepted = 1]
+    DEC -->|"✅ Accept & Download"| ACC["user_accepted = 1"]
     ACC --> TEL
     
-    DEC -->|❌ Discard / Idle Timeout| DIS[user_accepted = 0]
+    DEC -->|"❌ Discard Shot"| SURV2["Director Discard Survey<br/>Defect Category & Notes"]
+    SURV2 --> DIS["user_accepted = 0"]
     DIS --> TEL
     
-    TEL -->|mcp-clickhouse stdio JSON-RPC| CH[(ClickHouse Database\ngeneration_telemetry)]
-    CH -.->|Empirical Rerun Multipliers & Ground-Truth| COA
+    TEL -->|"mcp-clickhouse stdio JSON-RPC"| CH[("ClickHouse Database<br/>generation_telemetry")]
+    CH -.->|"Empirical Rerun Multipliers & Ground-Truth"| COA
 ```
 
 ---
@@ -63,6 +65,8 @@ CREATE TABLE IF NOT EXISTS generation_telemetry (
     total_rerun_count Int32,
     total_session_cost Float32,
     user_accepted UInt8,
+    feedback_category LowCardinality(String) DEFAULT 'unspecified',
+    director_feedback String DEFAULT '',
     created_at DateTime DEFAULT now()
 ) ENGINE = MergeTree()
 ORDER BY (suggested_model, created_at);
@@ -72,6 +76,7 @@ ORDER BY (suggested_model, created_at);
 
 ## 🚀 Key Features
 
+* **Director Feedback & Defect Diagnostics Survey**: Captures structured defect taxonomy (motion artifacts, physics glitches, lighting consistency, prompt deviations) and qualitative notes on every regenerate and discard action.
 * **Google AP2 Mandate Engine**: Transparent director spending mandates, wallet pre-funding, and micro-payment ledger.
 * **10-Second Cinematic Rendering HUD**: Real-time progress tracker and phase ticker transitioning into an embedded HTML5 mini video player.
 * **Non-Destructive Session Resume**: Floating resume badge at the bottom-right corner to continue reviewing active generation sessions at any time.

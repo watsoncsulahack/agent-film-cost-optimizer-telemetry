@@ -45,6 +45,8 @@ def test_telemetry_record_sql_insert():
         total_rerun_count=2,
         total_session_cost=0.1200,
         user_accepted=1,
+        feedback_category="lighting_inconsistency",
+        director_feedback="Lighting shifted midway through shot",
         created_at=dt,
     )
 
@@ -55,7 +57,30 @@ def test_telemetry_record_sql_insert():
     assert "hero''s face" in sql
     assert "0.0400" in sql
     assert "0.1200" in sql
+    assert "lighting_inconsistency" in sql
+    assert "Lighting shifted midway through shot" in sql
     assert "2026-09-05 20:00:00" in sql
+
+
+def test_feedback_survey_payloads():
+    uid = uuid4()
+    rerun = RerunPayload(
+        session_id=uid,
+        incremental_cost=0.04,
+        feedback_category="motion_artifact",
+        director_feedback="Severe character limb distortion on fast camera pan",
+    )
+    assert rerun.feedback_category == "motion_artifact"
+    assert "limb distortion" in rerun.director_feedback
+
+    term = TerminalPayload(
+        session_id=uid,
+        user_accepted=False,
+        feedback_category="budget_exceeded",
+        director_feedback="Compute cost limit reached for shot",
+    )
+    assert term.user_accepted is False
+    assert term.feedback_category == "budget_exceeded"
 
 
 def test_model_empirical_stats():

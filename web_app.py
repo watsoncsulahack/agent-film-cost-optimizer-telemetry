@@ -1313,6 +1313,45 @@ HTML_CONTENT = """<!DOCTYPE html>
       border-color: #ef4444;
     }
 
+    /* Director Defect Survey Chips & Modal */
+    .defect-chip {
+      background: #0b1120;
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 0.55rem 0.75rem;
+      border-radius: 0.55rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      transition: all 0.15s ease;
+      text-align: left;
+    }
+    .defect-chip:hover {
+      background: #111d35;
+      color: #fff;
+      border-color: rgba(245, 158, 11, 0.5);
+    }
+    .defect-chip.active {
+      background: rgba(245, 158, 11, 0.18);
+      border-color: var(--accent-amber);
+      color: #fff;
+      box-shadow: 0 0 12px rgba(245, 158, 11, 0.25);
+    }
+    .defect-chip.active-discard {
+      background: rgba(239, 68, 68, 0.18);
+      border-color: #ef4444;
+      color: #fff;
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.25);
+    }
+
+    @keyframes modalPop {
+      from { opacity: 0; transform: scale(0.96); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
     @keyframes fadeIn {
       from { opacity: 0; }
       to { opacity: 1; }
@@ -1660,6 +1699,75 @@ HTML_CONTENT = """<!DOCTYPE html>
           <span>❌</span>
           <span>Discard Shot</span>
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- PHASE 3: DIRECTOR FEEDBACK & DEFECT DIAGNOSTICS SURVEY MODAL              -->
+  <!-- ========================================================================= -->
+  <div id="feedbackSurveyModalBackdrop" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(2,4,9,0.85); backdrop-filter:blur(10px); z-index:11000; align-items:center; justify-content:center; padding:1.5rem;">
+    <div class="feedback-modal-content" style="background:#090e1a; border:1px solid rgba(245, 158, 11, 0.4); border-radius:1.2rem; max-width:620px; width:100%; box-shadow:0 25px 60px rgba(0,0,0,0.9), 0 0 40px rgba(245, 158, 11, 0.15); overflow:hidden; animation:modalPop 0.2s ease-out;">
+      
+      <!-- Survey Header -->
+      <div style="padding:1.15rem 1.5rem; background:#0e1526; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+        <div style="display:flex; align-items:center; gap:0.6rem; font-weight:800; font-size:1.05rem; color:#fff;">
+          <span id="surveyHeaderIcon">🔍</span>
+          <span id="surveyHeaderTitle">Director Defect Diagnostics</span>
+          <span class="tag-pill" id="surveyActionBadge" style="background:rgba(245, 158, 11, 0.2); color:var(--accent-amber); font-size:0.7rem;">ClickHouse MCP Telemetry</span>
+        </div>
+        <button class="modal-close-btn" onclick="closeFeedbackSurvey()">✖</button>
+      </div>
+
+      <!-- Survey Body -->
+      <div style="padding:1.4rem 1.5rem; display:flex; flex-direction:column; gap:1.1rem;">
+        <div>
+          <div style="font-weight:700; font-size:0.95rem; color:#fff; margin-bottom:0.25rem;" id="surveyPromptQuestion">
+            What was wrong with the generated output?
+          </div>
+          <p style="font-size:0.78rem; color:var(--text-secondary); margin:0;">
+            Empirical diagnostics are ingested via ClickHouse MCP to calculate real-world model reliability and adapt cost multipliers.
+          </p>
+        </div>
+
+        <!-- Defect Category Chips Grid -->
+        <div>
+          <label style="font-size:0.74rem; font-weight:700; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.05em; display:block; margin-bottom:0.55rem;">
+            Primary Defect / Diagnostic Category:
+          </label>
+          <div id="defectChipsContainer" style="display:grid; grid-template-columns:repeat(2, 1fr); gap:0.5rem;">
+            <!-- Injected by openFeedbackSurvey() -->
+          </div>
+        </div>
+
+        <!-- Qualitative Feedback Notes -->
+        <div>
+          <label style="font-size:0.74rem; font-weight:700; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.05em; display:block; margin-bottom:0.4rem;">
+            Director Qualitative Notes (Optional):
+          </label>
+          <textarea id="surveyFeedbackNotes" class="prompt-tweak-textarea" style="min-height:65px; font-size:0.82rem;" placeholder="e.g., Unnatural physics during car turn, artifact flickering at frame 40..."></textarea>
+        </div>
+
+        <!-- Financial Summary Banner in Survey -->
+        <div style="background:#04060a; border:1px solid var(--border-color); border-radius:0.6rem; padding:0.75rem 1rem; display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:0.8rem; color:var(--text-secondary);" id="surveyCostLabel">Incremental Rerun Debit:</span>
+          <span style="font-family:'JetBrains Mono'; font-weight:800; font-size:0.95rem; color:var(--accent-amber);" id="surveyCostValue">$0.0000</span>
+        </div>
+      </div>
+
+      <!-- Survey Footer Action Buttons -->
+      <div style="padding:1rem 1.5rem; background:#050912; border-top:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; gap:0.75rem;">
+        <button class="settings-btn" onclick="closeFeedbackSurvey()" style="font-size:0.82rem; padding:0.55rem 0.95rem;">
+          Cancel
+        </button>
+        <div style="display:flex; gap:0.6rem;">
+          <button class="settings-btn" onclick="submitFeedbackSurvey(true)" style="font-size:0.82rem; padding:0.55rem 0.95rem; background:rgba(255,255,255,0.06); color:var(--text-secondary);">
+            Skip Survey
+          </button>
+          <button id="surveySubmitBtn" class="btn-card-generate" onclick="submitFeedbackSurvey(false)" style="font-size:0.85rem; padding:0.6rem 1.3rem; font-weight:800; border:none; background:var(--accent-amber); color:#000;">
+            🚀 Confirm & Proceed
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -2106,6 +2214,115 @@ HTML_CONTENT = """<!DOCTYPE html>
       }, totalDuration);
     }
 
+    // --- Director Defect Survey & Diagnostics State ---
+    let currentSurveyMode = null; // 'rerun' | 'discard'
+    let selectedSurveyCategory = 'unspecified';
+
+    const RERUN_DEFECT_OPTIONS = [
+      { key: 'motion_artifact', icon: '🪢', label: 'Motion Artifact / Glitch' },
+      { key: 'physics_anatomy_defect', icon: '📐', label: 'Physics & Anatomy Defect' },
+      { key: 'lighting_inconsistency', icon: '💡', label: 'Lighting & Color Inconsistency' },
+      { key: 'camera_trajectory', icon: '🎥', label: 'Camera Velocity / Trajectory' },
+      { key: 'prompt_deviation', icon: '🎯', label: 'Prompt Deviation / Hallucination' },
+      { key: 'temporal_flicker', icon: '⏱️', label: 'Temporal Flickering / Jitter' },
+      { key: 'aesthetic_tweak', icon: '✨', label: 'Aesthetic / Style Adjustment' },
+      { key: 'other', icon: '💬', label: 'Other Defect' }
+    ];
+
+    const DISCARD_REASON_OPTIONS = [
+      { key: 'budget_exceeded', icon: '💰', label: 'Budget Exceeded' },
+      { key: 'unrecoverable_defects', icon: '🪢', label: 'Unrecoverable Artifacts' },
+      { key: 'prompt_mismatch', icon: '🎯', label: 'Concept / Prompt Mismatch' },
+      { key: 'iteration_limit', icon: '⌛', label: 'Iteration Limit Reached' },
+      { key: 'concept_abandoned', icon: '✨', label: 'Concept Abandoned' },
+      { key: 'other', icon: '💬', label: 'Other Reason' }
+    ];
+
+    function openFeedbackSurvey(mode) {
+      currentSurveyMode = mode;
+      const modal = document.getElementById('feedbackSurveyModalBackdrop');
+      const container = document.getElementById('defectChipsContainer');
+      const icon = document.getElementById('surveyHeaderIcon');
+      const title = document.getElementById('surveyHeaderTitle');
+      const actionBadge = document.getElementById('surveyActionBadge');
+      const question = document.getElementById('surveyPromptQuestion');
+      const costLabel = document.getElementById('surveyCostLabel');
+      const costVal = document.getElementById('surveyCostValue');
+      const submitBtn = document.getElementById('surveySubmitBtn');
+      document.getElementById('surveyFeedbackNotes').value = '';
+
+      container.innerHTML = '';
+      const options = (mode === 'rerun') ? RERUN_DEFECT_OPTIONS : DISCARD_REASON_OPTIONS;
+      selectedSurveyCategory = options[0].key;
+
+      options.forEach((opt, idx) => {
+        const chip = document.createElement('div');
+        chip.className = `defect-chip ${idx === 0 ? (mode === 'rerun' ? 'active' : 'active-discard') : ''}`;
+        chip.id = `defect-chip-${opt.key}`;
+        chip.onclick = () => selectSurveyCategory(opt.key, mode);
+        chip.innerHTML = `<span>${opt.icon}</span><span>${opt.label}</span>`;
+        container.appendChild(chip);
+      });
+
+      if (mode === 'rerun') {
+        icon.textContent = '🔄';
+        title.textContent = 'Director Defect Diagnostics (Rerun)';
+        actionBadge.textContent = 'Rerun Diagnostics';
+        actionBadge.style.background = 'rgba(245, 158, 11, 0.2)';
+        actionBadge.style.color = 'var(--accent-amber)';
+        question.textContent = 'What was wrong with the generated output?';
+        costLabel.textContent = 'Incremental Rerun Debit:';
+        costVal.textContent = '$' + activeSession.baseCost.toFixed(4);
+        costVal.style.color = 'var(--accent-amber)';
+        submitBtn.textContent = '🚀 Confirm Rerun & Debit';
+        submitBtn.style.background = 'var(--accent-amber)';
+        submitBtn.style.color = '#000';
+      } else {
+        icon.textContent = '❌';
+        title.textContent = 'Discard Reason & Diagnostics';
+        actionBadge.textContent = 'Terminal Discard';
+        actionBadge.style.background = 'rgba(239, 68, 68, 0.2)';
+        actionBadge.style.color = '#ef4444';
+        question.textContent = 'Why are you discarding this shot?';
+        costLabel.textContent = 'Total Realized Cost Incurred:';
+        costVal.textContent = '$' + activeSession.runningCost.toFixed(4);
+        costVal.style.color = '#ef4444';
+        submitBtn.textContent = '🗑️ Confirm Discard & Record';
+        submitBtn.style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+        submitBtn.style.color = '#fff';
+      }
+
+      modal.style.display = 'flex';
+    }
+
+    function selectSurveyCategory(catKey, mode) {
+      selectedSurveyCategory = catKey;
+      const activeClass = (mode || currentSurveyMode) === 'rerun' ? 'active' : 'active-discard';
+      document.querySelectorAll('.defect-chip').forEach(c => {
+        c.classList.remove('active', 'active-discard');
+      });
+      const target = document.getElementById(`defect-chip-${catKey}`);
+      if (target) target.classList.add(activeClass);
+    }
+
+    function closeFeedbackSurvey() {
+      document.getElementById('feedbackSurveyModalBackdrop').style.display = 'none';
+      currentSurveyMode = null;
+    }
+
+    async function submitFeedbackSurvey(skip = false) {
+      const category = skip ? 'unspecified' : selectedSurveyCategory;
+      const notes = skip ? '' : document.getElementById('surveyFeedbackNotes').value.trim();
+      const mode = currentSurveyMode;
+      closeFeedbackSurvey();
+
+      if (mode === 'rerun') {
+        await executeRerunWithFeedback(category, notes);
+      } else if (mode === 'discard') {
+        await executeDiscardWithFeedback(category, notes);
+      }
+    }
+
     // --- Action: Trigger Rerun (+ Cost) ---
     async function modalTriggerRerun() {
       // 1. Check wallet balance
@@ -2114,19 +2331,22 @@ HTML_CONTENT = """<!DOCTYPE html>
         openWalletModal();
         return;
       }
+      openFeedbackSurvey('rerun');
+    }
 
-      // 2. Increment rerun & debit wallet
+    async function executeRerunWithFeedback(category, notes) {
+      // 1. Increment rerun & debit wallet
       activeSession.rerunCount++;
       activeSession.runningCost += activeSession.baseCost;
       debitWallet(activeSession.baseCost, activeSession.modelName, true);
 
-      // 3. Update UI counters
+      // 2. Update UI counters
       document.getElementById('modalRunningCost').textContent = '$' + activeSession.runningCost.toFixed(4);
       document.getElementById('modalRerunCount').textContent = activeSession.rerunCount;
       document.getElementById('modalWalletRemaining').textContent = '$' + agentWallet.balance.toFixed(4);
       document.getElementById('bannerTotalCost').textContent = '$' + activeSession.runningCost.toFixed(4);
 
-      // 4. Dispatch Telemetry Egress for Rerun
+      // 3. Dispatch Telemetry Egress for Rerun with feedback
       const tweakReason = document.getElementById('modalRerunReasonInput').value.trim() || 'Director adjusted prompt parameters';
       try {
         fetch('/api/telemetry/session/rerun', {
@@ -2135,12 +2355,14 @@ HTML_CONTENT = """<!DOCTYPE html>
           body: JSON.stringify({
             session_id: activeSession.id,
             incremental_cost: activeSession.baseCost,
-            reason: tweakReason
+            reason: tweakReason,
+            feedback_category: category,
+            director_feedback: notes
           })
         }).catch(e => console.warn("Telemetry rerun dispatch:", e));
       } catch (err) {}
 
-      // 5. Trigger 10-Second Loading Animation
+      // 4. Trigger 10-Second Loading Animation
       startVideoRenderProcess(true);
     }
 
@@ -2154,7 +2376,9 @@ HTML_CONTENT = """<!DOCTYPE html>
           body: JSON.stringify({
             session_id: activeSession.id,
             user_accepted: true,
-            reason: 'Director Approved Shot'
+            reason: 'Director Approved Shot',
+            feedback_category: 'approved',
+            director_feedback: 'Director accepted and downloaded final render.'
           })
         });
       } catch (err) {}
@@ -2172,6 +2396,10 @@ Telemetry and financial ledger persisted.`);
 
     // --- Action: Discard Shot ---
     async function modalTriggerDiscard() {
+      openFeedbackSurvey('discard');
+    }
+
+    async function executeDiscardWithFeedback(category, notes) {
       activeSession.accepted = 0;
       try {
         await fetch('/api/telemetry/session/complete', {
@@ -2180,7 +2408,9 @@ Telemetry and financial ledger persisted.`);
           body: JSON.stringify({
             session_id: activeSession.id,
             user_accepted: false,
-            reason: 'Director Discarded Shot'
+            reason: 'Director Discarded Shot',
+            feedback_category: category,
+            director_feedback: notes
           })
         });
       } catch (err) {}

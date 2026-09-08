@@ -64,14 +64,18 @@ class TelemetryClient:
         incremental_cost: Optional[float] = None,
         reason: Optional[str] = None,
         adjusted_prompt: Optional[str] = None,
+        feedback_category: Optional[str] = "unspecified",
+        director_feedback: Optional[str] = "",
     ) -> None:
-        """Records a regeneration rerun asynchronously (FR-2)."""
+        """Records a regeneration rerun asynchronously with feedback (FR-2)."""
         uid = self._normalize_uuid(session_id)
         payload = RerunPayload(
             session_id=uid,
             incremental_cost=incremental_cost,
             reason=reason,
             adjusted_prompt=adjusted_prompt,
+            feedback_category=feedback_category,
+            director_feedback=director_feedback,
         )
         await self.session_manager.record_rerun(payload)
 
@@ -80,6 +84,8 @@ class TelemetryClient:
         session_id: Union[str, UUID],
         accepted: bool = True,
         reason: Optional[str] = None,
+        feedback_category: Optional[str] = "unspecified",
+        director_feedback: Optional[str] = "",
     ) -> Optional[TelemetryRecord]:
         """Finalizes session and triggers ClickHouse MCP persistence (FR-3)."""
         uid = self._normalize_uuid(session_id)
@@ -87,6 +93,8 @@ class TelemetryClient:
             session_id=uid,
             user_accepted=accepted,
             reason=reason or ("downloaded" if accepted else "rejected"),
+            feedback_category=feedback_category,
+            director_feedback=director_feedback,
         )
         return await self.session_manager.complete_session(payload)
 
@@ -94,9 +102,17 @@ class TelemetryClient:
         self,
         session_id: Union[str, UUID],
         reason: str = "user_abandoned",
+        feedback_category: Optional[str] = "unspecified",
+        director_feedback: Optional[str] = "",
     ) -> Optional[TelemetryRecord]:
         """Marks session as abandoned / closed without acceptance (FR-3.2)."""
-        return await self.async_complete_session(session_id=session_id, accepted=False, reason=reason)
+        return await self.async_complete_session(
+            session_id=session_id,
+            accepted=False,
+            reason=reason,
+            feedback_category=feedback_category,
+            director_feedback=director_feedback,
+        )
 
     async def async_get_model_insights(
         self, suggested_model: Optional[str] = None
@@ -134,6 +150,8 @@ class TelemetryClient:
         incremental_cost: Optional[float] = None,
         reason: Optional[str] = None,
         adjusted_prompt: Optional[str] = None,
+        feedback_category: Optional[str] = "unspecified",
+        director_feedback: Optional[str] = "",
     ) -> None:
         """Synchronous wrapper to record rerun."""
         uid = self._normalize_uuid(session_id)
@@ -142,6 +160,8 @@ class TelemetryClient:
             incremental_cost=incremental_cost,
             reason=reason,
             adjusted_prompt=adjusted_prompt,
+            feedback_category=feedback_category,
+            director_feedback=director_feedback,
         )
         self.session_manager.record_rerun_sync(payload)
 
@@ -150,6 +170,8 @@ class TelemetryClient:
         session_id: Union[str, UUID],
         accepted: bool = True,
         reason: Optional[str] = None,
+        feedback_category: Optional[str] = "unspecified",
+        director_feedback: Optional[str] = "",
     ) -> Optional[TelemetryRecord]:
         """Synchronous wrapper to complete session."""
         uid = self._normalize_uuid(session_id)
@@ -157,6 +179,8 @@ class TelemetryClient:
             session_id=uid,
             user_accepted=accepted,
             reason=reason or ("downloaded" if accepted else "rejected"),
+            feedback_category=feedback_category,
+            director_feedback=director_feedback,
         )
         return self.session_manager.complete_session_sync(payload)
 
@@ -164,9 +188,17 @@ class TelemetryClient:
         self,
         session_id: Union[str, UUID],
         reason: str = "user_abandoned",
+        feedback_category: Optional[str] = "unspecified",
+        director_feedback: Optional[str] = "",
     ) -> Optional[TelemetryRecord]:
         """Synchronous wrapper to mark session abandoned."""
-        return self.complete_session(session_id=session_id, accepted=False, reason=reason)
+        return self.complete_session(
+            session_id=session_id,
+            accepted=False,
+            reason=reason,
+            feedback_category=feedback_category,
+            director_feedback=director_feedback,
+        )
 
 
 # Singleton client instance

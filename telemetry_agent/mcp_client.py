@@ -68,10 +68,13 @@ class ClickHouseMCPClient:
         env["CLICKHOUSE_HOST"] = self.host
         env["CLICKHOUSE_PORT"] = str(self.port)
         env["CLICKHOUSE_USER"] = self.user
+        env["CLICKHOUSE_USERNAME"] = self.user
         env["CLICKHOUSE_PASSWORD"] = self.password
         env["CLICKHOUSE_DATABASE"] = self.database
         env["CLICKHOUSE_SECURE"] = "true" if self.secure else "false"
+        env["CLICKHOUSE_ALLOW_WRITE_ACCESS"] = "true"
         return env
+
 
     async def execute_query_via_mcp(self, query: str) -> Dict[str, Any]:
         """Executes a SQL query by communicating with the mcp-clickhouse server."""

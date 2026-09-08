@@ -20,13 +20,26 @@ class TelemetryConfig:
     clickhouse_host: str = os.getenv("CLICKHOUSE_HOST", "localhost")
     clickhouse_port: int = int(os.getenv("CLICKHOUSE_PORT", "8443"))
     clickhouse_user: str = os.getenv("CLICKHOUSE_USER", "default")
-    clickhouse_password: str = os.getenv("CLICKHOUSE_PASSWORD", "")
+    clickhouse_password: str = (
+        os.getenv("CLICKHOUSE_PASSWORD")
+        or os.getenv("CLICKHOUSE_API_KEY")
+        or os.getenv("CLICKHOUSE_KEY")
+        or os.getenv("CLICKHOUSE_TOKEN")
+        or ""
+    )
+    clickhouse_api_key: str = (
+        os.getenv("CLICKHOUSE_API_KEY")
+        or os.getenv("CLICKHOUSE_KEY")
+        or os.getenv("CLICKHOUSE_TOKEN")
+        or ""
+    )
     clickhouse_database: str = os.getenv("CLICKHOUSE_DATABASE", "default")
     clickhouse_secure: bool = os.getenv("CLICKHOUSE_SECURE", "false").lower() in ("true", "1", "yes")
 
     # ClickHouse MCP Server Command (stdio / JSON-RPC)
     mcp_command: str = os.getenv("MCP_CLICKHOUSE_COMMAND", "uvx mcp-clickhouse")
     mcp_sse_url: Optional[str] = os.getenv("MCP_CLICKHOUSE_SSE_URL") or None
+
 
     # Telemetry Lifecycle Settings
     idle_timeout_seconds: int = int(os.getenv("IDLE_TIMEOUT_SECONDS", "900"))  # Default: 15 minutes

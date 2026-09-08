@@ -70,10 +70,14 @@ class ClickHouseMCPClient:
         env["CLICKHOUSE_USER"] = self.user
         env["CLICKHOUSE_USERNAME"] = self.user
         env["CLICKHOUSE_PASSWORD"] = self.password
+        if getattr(config, "clickhouse_api_key", None):
+            env["CLICKHOUSE_API_KEY"] = config.clickhouse_api_key
+            env["CLICKHOUSE_TOKEN"] = config.clickhouse_api_key
         env["CLICKHOUSE_DATABASE"] = self.database
         env["CLICKHOUSE_SECURE"] = "true" if self.secure else "false"
         env["CLICKHOUSE_ALLOW_WRITE_ACCESS"] = "true"
         return env
+
 
 
     async def execute_query_via_mcp(self, query: str) -> Dict[str, Any]:

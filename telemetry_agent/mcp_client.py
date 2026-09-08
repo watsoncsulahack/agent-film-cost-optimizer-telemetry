@@ -49,18 +49,38 @@ class ClickHouseMCPClient:
         secure: Optional[bool] = None,
         table_name: Optional[str] = None,
     ):
+        raw_host = (host or config.clickhouse_host).strip()
+        sec = secure if secure is not None else config.clickhouse_secure
+        prt = port or config.clickhouse_port
+
+        if raw_host.startswith("https://"):
+            raw_host = raw_host[len("https://"):]
+            sec = True
+        elif raw_host.startswith("http://"):
+            raw_host = raw_host[len("http://"):]
+
+        raw_host = raw_host.split("/")[0]
+        if ":" in raw_host:
+            parts = raw_host.split(":")
+            raw_host = parts[0]
+            try:
+                prt = int(parts[1])
+            except ValueError:
+                pass
+
         self.mcp_command = mcp_command or config.mcp_command
-        self.host = host or config.clickhouse_host
-        self.port = port or config.clickhouse_port
+        self.host = raw_host
+        self.port = prt
         self.user = user or config.clickhouse_user
         self.password = password if password is not None else config.clickhouse_password
         self.database = database or config.clickhouse_database
-        self.secure = secure if secure is not None else config.clickhouse_secure
+        self.secure = sec
         self.table_name = table_name or config.telemetry_table_name
         self.fallback_file = config.fallback_log_file
 
         self._initialized_table = False
         self._ch_client = None  # Lazy clickhouse-connect instance if available
+
 
     def _get_env_vars(self) -> Dict[str, str]:
         """Prepares environment variables for the mcp-clickhouse child process."""

@@ -131,12 +131,44 @@ def get_system_config():
 async def configure_telemetry_endpoint(payload: ClickHouseConfigPayload):
     """Dynamically updates ClickHouse connection credentials and tests connectivity."""
     try:
-        if payload.host is not None and payload.host.strip():
-            config.clickhouse_host = payload.host.strip()
-            default_client.mcp_client.host = config.clickhouse_host
-        if payload.port is not None:
-            config.clickhouse_port = int(payload.port)
-            default_client.mcp_client.port = config.clickhouse_port
+        raw_host = (payload.host or "").strip() if payload.host is not None else ""
+        if raw_host:
+            sec = payload.secure if payload.secure is not None else config.clickhouse_secure
+            prt = int(payload.port) if payload.port is not None else config.clickhouse_port
+
+            if raw_host.startswith("https://"):
+                raw_host = raw_host[len("https://"):]
+                sec = True
+                if payload.port is None or payload.port == 8123:
+                    prt = 8443
+            elif raw_host.startswith("http://"):
+                raw_host = raw_host[len("http://"):]
+
+            raw_host = raw_host.split("/")[0]
+            if ":" in raw_host:
+                parts = raw_host.split(":")
+                raw_host = parts[0]
+                try:
+                    prt = int(parts[1])
+                    if prt in (8443, 9440):
+                        sec = True
+                except ValueError:
+                    pass
+
+            config.clickhouse_host = raw_host
+            config.clickhouse_port = prt
+            config.clickhouse_secure = sec
+            default_client.mcp_client.host = raw_host
+            default_client.mcp_client.port = prt
+            default_client.mcp_client.secure = sec
+        else:
+            if payload.port is not None:
+                config.clickhouse_port = int(payload.port)
+                default_client.mcp_client.port = config.clickhouse_port
+            if payload.secure is not None:
+                config.clickhouse_secure = bool(payload.secure)
+                default_client.mcp_client.secure = config.clickhouse_secure
+
         if payload.user is not None and payload.user.strip():
             config.clickhouse_user = payload.user.strip()
             default_client.mcp_client.user = config.clickhouse_user
@@ -149,9 +181,6 @@ async def configure_telemetry_endpoint(payload: ClickHouseConfigPayload):
         if payload.database is not None and payload.database.strip():
             config.clickhouse_database = payload.database.strip()
             default_client.mcp_client.database = config.clickhouse_database
-        if payload.secure is not None:
-            config.clickhouse_secure = bool(payload.secure)
-            default_client.mcp_client.secure = config.clickhouse_secure
 
         # Reset lazy client to force reconnection with new credentials
         default_client.mcp_client._ch_client = None
@@ -2076,18 +2105,48 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
     }
 
+    function sanitizeClickHouseHostInput(hostId, portId, secId) {
+      let host = (document.getElementById(hostId).value || '').trim();
+      let port = parseInt(document.getElementById(portId).value) || 8123;
+      let sec = document.getElementById(secId).checked;
+
+      if (host.startsWith('https://')) {
+        host = host.slice(8);
+        sec = true;
+        if (port === 8123 || !document.getElementById(portId).value) port = 8443;
+      } else if (host.startsWith('http://')) {
+        host = host.slice(7);
+      }
+      host = host.split('/')[0];
+      if (host.includes(':')) {
+        const parts = host.split(':');
+        host = parts[0];
+        const p = parseInt(parts[1], 10);
+        if (!isNaN(p)) {
+          port = p;
+          if (port === 8443 || port === 9440) sec = true;
+        }
+      }
+
+      document.getElementById(hostId).value = host;
+      document.getElementById(portId).value = port;
+      document.getElementById(secId).checked = sec;
+      return { host: host || 'localhost', port, secure: sec };
+    }
+
     async function testClickHouseConnectionStudio() {
       const msg = document.getElementById('studioCHStatusMsg');
       msg.innerHTML = '<span style="color:var(--accent-blue);">🔄 Testing connection to ClickHouse...</span>';
       
+      const parsed = sanitizeClickHouseHostInput('chHostInput', 'chPortInput', 'chSecureInput');
       const payload = {
-        host: document.getElementById('chHostInput').value.trim() || 'localhost',
-        port: parseInt(document.getElementById('chPortInput').value) || 8123,
+        host: parsed.host,
+        port: parsed.port,
         user: document.getElementById('chUserInput').value.trim() || 'default',
         password: document.getElementById('chPasswordInput').value.trim(),
         api_key: document.getElementById('chPasswordInput').value.trim(),
         database: document.getElementById('chDbInput').value.trim() || 'default',
-        secure: document.getElementById('chSecureInput').checked
+        secure: parsed.secure
       };
 
       try {
@@ -2113,22 +2172,20 @@ HTML_CONTENT = """<!DOCTYPE html>
       if (gemini) localStorage.setItem('GEMINI_API_KEY', gemini);
       if (parallel) localStorage.setItem('PARALLEL_API_KEY', parallel);
 
-      const chHost = document.getElementById('chHostInput').value.trim();
-      const chPort = document.getElementById('chPortInput').value.trim();
+      const parsed = sanitizeClickHouseHostInput('chHostInput', 'chPortInput', 'chSecureInput');
       const chUser = document.getElementById('chUserInput').value.trim();
       const chPass = document.getElementById('chPasswordInput').value.trim();
       const chDb = document.getElementById('chDbInput').value.trim();
-      const chSec = document.getElementById('chSecureInput').checked;
 
-      if (chHost) localStorage.setItem('CLICKHOUSE_HOST', chHost);
-      if (chPort) localStorage.setItem('CLICKHOUSE_PORT', chPort);
+      localStorage.setItem('CLICKHOUSE_HOST', parsed.host);
+      localStorage.setItem('CLICKHOUSE_PORT', parsed.port);
       if (chUser) localStorage.setItem('CLICKHOUSE_USER', chUser);
       if (chPass) {
         localStorage.setItem('CLICKHOUSE_PASSWORD', chPass);
         localStorage.setItem('CLICKHOUSE_API_KEY', chPass);
       }
       if (chDb) localStorage.setItem('CLICKHOUSE_DATABASE', chDb);
-      localStorage.setItem('CLICKHOUSE_SECURE', chSec ? 'true' : 'false');
+      localStorage.setItem('CLICKHOUSE_SECURE', parsed.secure ? 'true' : 'false');
 
       await testClickHouseConnectionStudio();
       checkEnvConfig();
@@ -3430,25 +3487,52 @@ ORDER BY (suggested_model, created_at);</div>
       }
     }
 
+    function sanitizeDrawerCHInput() {
+      let host = (document.getElementById('drawerCHHost').value || '').trim();
+      let port = parseInt(document.getElementById('drawerCHPort').value) || 8123;
+      let sec = document.getElementById('drawerCHSecure').checked;
+
+      if (host.startsWith('https://')) {
+        host = host.slice(8);
+        sec = true;
+        if (port === 8123 || !document.getElementById('drawerCHPort').value) port = 8443;
+      } else if (host.startsWith('http://')) {
+        host = host.slice(7);
+      }
+      host = host.split('/')[0];
+      if (host.includes(':')) {
+        const parts = host.split(':');
+        host = parts[0];
+        const p = parseInt(parts[1], 10);
+        if (!isNaN(p)) {
+          port = p;
+          if (port === 8443 || port === 9440) sec = true;
+        }
+      }
+
+      document.getElementById('drawerCHHost').value = host;
+      document.getElementById('drawerCHPort').value = port;
+      document.getElementById('drawerCHSecure').checked = sec;
+      return { host: host || 'localhost', port, secure: sec };
+    }
+
     async function testAndSaveCHDrawer() {
       const statusEl = document.getElementById('drawerCHStatus');
       statusEl.innerHTML = '<span style="color:var(--accent-blue);">🔄 Connecting to ClickHouse and verifying table...</span>';
 
-      const host = document.getElementById('drawerCHHost').value.trim() || 'localhost';
-      const port = parseInt(document.getElementById('drawerCHPort').value) || 8123;
+      const parsed = sanitizeDrawerCHInput();
       const user = document.getElementById('drawerCHUser').value.trim() || 'default';
       const pass = document.getElementById('drawerCHPassword').value.trim();
       const db = document.getElementById('drawerCHDatabase').value.trim() || 'default';
-      const sec = document.getElementById('drawerCHSecure').checked;
 
       const payload = {
-        host: host,
-        port: port,
+        host: parsed.host,
+        port: parsed.port,
         user: user,
         password: pass,
         api_key: pass,
         database: db,
-        secure: sec
+        secure: parsed.secure
       };
 
       try {
@@ -3461,15 +3545,15 @@ ORDER BY (suggested_model, created_at);</div>
         
         if (res.success) {
           statusEl.innerHTML = `<span style="color:var(--accent-emerald);">🟢 Connected! ${res.message}</span>`;
-          localStorage.setItem('CLICKHOUSE_HOST', host);
-          localStorage.setItem('CLICKHOUSE_PORT', port);
+          localStorage.setItem('CLICKHOUSE_HOST', parsed.host);
+          localStorage.setItem('CLICKHOUSE_PORT', parsed.port);
           localStorage.setItem('CLICKHOUSE_USER', user);
           if (pass) {
             localStorage.setItem('CLICKHOUSE_PASSWORD', pass);
             localStorage.setItem('CLICKHOUSE_API_KEY', pass);
           }
           localStorage.setItem('CLICKHOUSE_DATABASE', db);
-          localStorage.setItem('CLICKHOUSE_SECURE', sec ? 'true' : 'false');
+          localStorage.setItem('CLICKHOUSE_SECURE', parsed.secure ? 'true' : 'false');
 
           setTimeout(() => {
             loadAllTelemetryData();

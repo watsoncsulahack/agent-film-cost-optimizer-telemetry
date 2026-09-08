@@ -42,3 +42,24 @@ def test_mcp_client_fallback_on_unreachable_server(tmp_path):
             assert "Sora" in content
 
     asyncio.run(_test())
+
+
+def test_mcp_client_host_sanitization():
+    """Verifies that full URLs with https/http and ports are sanitized properly."""
+    # Test HTTPS full URL with port
+    c1 = ClickHouseMCPClient(host="https://q48kam3v08.us-east1.gcp.clickhouse.cloud:8443")
+    assert c1.host == "q48kam3v08.us-east1.gcp.clickhouse.cloud"
+    assert c1.port == 8443
+    assert c1.secure is True
+
+    # Test HTTP full URL with trailing slash
+    c2 = ClickHouseMCPClient(host="http://my-host.clickhouse.cloud:8123/", secure=False)
+    assert c2.host == "my-host.clickhouse.cloud"
+    assert c2.port == 8123
+
+    # Test plain host without protocol
+    c3 = ClickHouseMCPClient(host="localhost", port=8123, secure=False)
+    assert c3.host == "localhost"
+    assert c3.port == 8123
+    assert c3.secure is False
+
